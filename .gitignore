@@ -1,0 +1,18 @@
+# Files and folders to ignore
+
+# 1. intermediate files
+*.o
+*.d
+
+
+# 2. Platform specific build related
+
+Builds/*
+Builds/*
+
+
+# 3. OS-specific files
+
+.DS_Store
+
+.vscode
