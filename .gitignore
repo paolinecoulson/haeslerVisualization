@@ -8,7 +8,7 @@
 # 2. Platform specific build related
 
 Builds/*
-Builds/*
+Build/*
 
 
 # 3. OS-specific files

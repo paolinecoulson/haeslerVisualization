@@ -235,12 +235,45 @@ void DisplayBuffer::addData (AudioBuffer<float>& buffer, int chan, int nSamples)
 
     int newIndex;
 
+    juce::AudioBuffer<float> outputBuffer(1, nSamples);
+        outputBuffer.clear(); // Zero all channels
+
+        float* out = outputBuffer.getWritePointer(0);
+        int validCount = 0;
+
+        for (int i = 0; i < 4; ++i)
+        {
+            for (int j = 0; j < 4; ++j)
+            {
+                const int idx = chan + i + j * 32;
+                if (idx >= 0 && idx < numChannels)
+                {
+                    const float* in = buffer.getReadPointer(idx);
+                    for (int sample = 0; sample < nSamples; ++sample)
+                        out[sample] += in[sample];
+                    ++validCount;
+                }
+            }
+        }
+    
+        if (validCount > 0)
+        {
+            const float inv = 1.0f / static_cast<float>(validCount);
+            for (int sample = 0; sample < nSamples; ++sample)
+                out[sample] *= inv;
+        }
+
+
+
     if (nSamples < samplesLeft)
     {
+        
+        
+
         copyFrom (channelMap[chan], // destChannel
                   displayBufferIndices[channelMap[chan]], // destStartSample
-                  buffer, // source
-                  chan, // source channel
+                  outputBuffer, // source
+                  1, // source channel
                   0, // source start sample
                   nSamples); // numSamples
 
@@ -254,15 +287,15 @@ void DisplayBuffer::addData (AudioBuffer<float>& buffer, int chan, int nSamples)
 
         copyFrom (channelMap[chan], // destChannel
                   displayBufferIndices[channelMap[chan]], // destStartSample
-                  buffer, // source
-                  chan, // source channel
+                  outputBuffer, // source
+                  1, // source channel
                   0, // source start sample
                   samplesLeft); // numSamples
 
         copyFrom (channelMap[chan], // destChannel
                   0, // destStartSample
-                  buffer, // source
-                  chan, // source channel
+                  outputBuffer, // source
+                  1, // source channel
                   samplesLeft, // source start sample
                   extraSamples); // numSamples
 

@@ -408,10 +408,10 @@ LfpDisplayOptions::LfpDisplayOptions (LfpDisplayCanvas* canvas_, LfpDisplaySplit
     channelDisplaySkipOptions.add ("16");
     channelDisplaySkipOptions.add ("32");
     channelDisplaySkipOptions.add ("64");
-    selectedChannelDisplaySkip = 1;
+    selectedChannelDisplaySkip = 3;
     selectedChannelDisplaySkipValue = channelDisplaySkipOptions[selectedChannelDisplaySkip - 1];
 
-    channelDisplaySkipSelection = std::make_unique<ComboBox> ("Channel Skip");
+    channelDisplaySkipSelection = std::make_unique<ComboBox> ("Channel average");
     for (int i = 0; i < channelDisplaySkipOptions.size(); i++)
         channelDisplaySkipSelection->addItem (channelDisplaySkipOptions[i], i + 1);
     channelDisplaySkipSelection->setSelectedId (selectedChannelDisplaySkip, sendNotification);

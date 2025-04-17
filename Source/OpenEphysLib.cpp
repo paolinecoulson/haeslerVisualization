@@ -50,7 +50,7 @@ extern "C" EXPORT int getPluginInfo (int index, Plugin::PluginInfo* info)
     {
         case 0:
             info->type = Plugin::PROCESSOR;
-            info->processor.name = "LFP Viewer";
+            info->processor.name = "Haesler LFP Viewer";
             info->processor.type = Plugin::Processor::SINK;
             info->processor.creator = &(Plugin::createProcessor<LfpViewer::LfpDisplayNode>);
             break;
