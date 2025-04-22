@@ -39,7 +39,7 @@ using namespace LfpViewer;
 extern "C" EXPORT void getLibInfo (Plugin::LibraryInfo* info)
 {
     info->apiVersion = PLUGIN_API_VER;
-    info->name = "LFP viewer";
+    info->name = "Haesler LFP viewer";
     info->libVersion = ProjectInfo::versionString;
     info->numPlugins = NUM_PLUGINS;
 }

@@ -55,6 +55,7 @@ void DisplayBuffer::prepareToUpdate()
     channelMap.clear();
     numChannels = 0;
 
+    
     isNeeded = false;
 }
 
@@ -98,6 +99,17 @@ void DisplayBuffer::update()
 
     for (int i = 0; i <= numChannels; i++)
         displayBufferIndices.set (i, 0);
+
+    int _displaySkipAmt = 4;
+
+    for (int j = 0; j < numChannels / 32; j = j + _displaySkipAmt)
+    {
+        for (int i = 0; i < 32; i = i + _displaySkipAmt)
+        {
+            LOGD ("insert ", i + 32 * j);
+            idx_channelToDraw.insert (i + 32 * j);
+        }
+    }
 }
 
 void DisplayBuffer::resetIndices()
@@ -227,6 +239,9 @@ void DisplayBuffer::addData (AudioBuffer<float>& buffer, int chan, int nSamples)
 {
     if (displays.size() == 0)
         return;
+    if(idx_channelToDraw.count(chan)==0)
+        return;
+
 
     int previousIndex = displayBufferIndices[channelMap[chan]];
     int channelIndex = channelMap[chan];
@@ -265,9 +280,6 @@ void DisplayBuffer::addData (AudioBuffer<float>& buffer, int chan, int nSamples)
 
     if (nSamples < samplesLeft)
     {
-        
-        
-
         copyFrom (channelMap[chan], // destChannel
                   displayBufferIndices[channelMap[chan]], // destStartSample
                   outputBuffer, // source

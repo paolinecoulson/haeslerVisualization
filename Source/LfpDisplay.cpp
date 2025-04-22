@@ -699,7 +699,10 @@ void LfpDisplay::setChannelDisplaySkipAmount (int skipAmt)
     if (! getSingleChannelState())
         rebuildDrawableChannelsList();
 
+    
+
     canvasSplit->redraw();
+    LOGD("Redraw with channel List");
 }
 
 void LfpDisplay::setScrollPosition (int x, int y)
@@ -934,6 +937,20 @@ void LfpDisplay::rebuildDrawableChannelsList()
     removeAllChildren(); // start with clean slate
 
     Array<LfpChannelTrack> channelsToDraw; // all visible channels will be added to this array
+    std::unordered_set<int> idx_channelToDraw; 
+    LOGD("Channels size : ",  channels.size());
+    int _displaySkipAmt= displaySkipAmt;
+    if (displaySkipAmt == 0)
+       _displaySkipAmt= 1;
+
+    for(int j=0; j< channels.size()/32; j=j+_displaySkipAmt){
+        for(int i=0; i<32; i=i+_displaySkipAmt){
+            LOGD("insert ", i+32*j);
+            idx_channelToDraw.insert(i + 32*j);
+        }
+    }
+    LOGD("Create set of indices");
+    LOGD(idx_channelToDraw.size());
     Array<int> filteredChannels;
     if (canvasSplit->displayBuffer)
     {
@@ -949,10 +966,12 @@ void LfpDisplay::rebuildDrawableChannelsList()
         {
             filterChannelIndex++;
         }
+
         if (filteredChannels.size() == 0 || (filterChannelIndex < filteredChannels.size() && channelNumber == filteredChannels[filterChannelIndex]))
         {
-            if (displaySkipAmt == 0 || ((filteredChannels.size() ? filterChannelIndex : i) % displaySkipAmt == 0)) // no skips, add all channels
+            if (idx_channelToDraw.count((filteredChannels.size() ? filterChannelIndex : i) )==1) // no skips, add all channels
             {
+
                 channels[i]->setHidden (false);
                 channelInfo[i]->setHidden (false);
 
@@ -965,6 +984,11 @@ void LfpDisplay::rebuildDrawableChannelsList()
 
                 addAndMakeVisible (channels[i]);
                 addAndMakeVisible (channelInfo[i]);
+
+            }else // skip some channels
+            {
+                channels[i]->setHidden (true);
+                channelInfo[i]->setHidden (true);
             }
             filterChannelIndex++;
         }
@@ -977,8 +1001,6 @@ void LfpDisplay::rebuildDrawableChannelsList()
 
     if (channelsOrderedByDepth && channelsToDraw.size() > 0)
     {
-        LOGD ("Sorting channels by depth.");
-
         const int numChannels = channelsToDraw.size();
 
         std::vector<float> depths (numChannels);
@@ -1050,8 +1072,6 @@ void LfpDisplay::rebuildDrawableChannelsList()
     setColours();
 
     resized();
-
-    //LOGD("Finished standard channel rebuild.");
 }
 
 LfpBitmapPlotter* const LfpDisplay::getPlotterPtr() const

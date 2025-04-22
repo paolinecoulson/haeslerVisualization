@@ -81,7 +81,7 @@ public:
     void addData (AudioBuffer<float>& buffer, int chan, int nSamples);
 
     CriticalSection* getMutex() { return &displayMutex; }
-
+    std::unordered_set<int> idx_channelToDraw; 
     struct ChannelMetadata
     {
         String name = "";
