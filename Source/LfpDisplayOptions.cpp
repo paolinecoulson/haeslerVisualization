@@ -68,6 +68,8 @@ LfpDisplayOptions::LfpDisplayOptions (LfpDisplayCanvas* canvas_, LfpDisplaySplit
     mainOptionsHolder->setViewedComponent (mainOptions.get(), false);
 
     // Timebase
+    timebases.add ("0.001");
+    timebases.add ("0.010");
     timebases.add ("0.050");
     timebases.add ("0.100");
     timebases.add ("0.250");
