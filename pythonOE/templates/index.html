@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Timeseries Grid</title>
+    <script src="https://cdn.bokeh.org/bokeh/release/bokeh-3.7.2.min.js"
+        crossorigin="anonymous"></script>
+        <script src="https://cdn.bokeh.org/bokeh/release/bokeh-widgets-3.7.2.min.js"
+                crossorigin="anonymous"></script>
+        <script src="https://cdn.bokeh.org/bokeh/release/bokeh-tables-3.7.2.min.js"
+                crossorigin="anonymous"></script>
+        <script src="https://cdn.bokeh.org/bokeh/release/bokeh-gl-3.7.2.min.js"
+                crossorigin="anonymous"></script>
+        <script src="https://cdn.bokeh.org/bokeh/release/bokeh-mathjax-3.7.2.min.js"
+                crossorigin="anonymous"></script>
+    <style>
+      .container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+        padding: 0;
+      }
+      .bokeh-root {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+    {{ bokeh_script | safe }}
+</head>
+<body>
+    <div class="container">
+        <div id="bokeh-plot">
+            {{ bokeh_div | safe }}
+        </div>
+    </div>
+</body>
+</html>
