@@ -39,6 +39,8 @@ class DataStream(threading.Thread):
 
         print("Initialized EventListener at " + self.url)
         self.events = []
+        self.path = Path.home() / "Desktop" / "data"
+        self.start()
 
     def run(self):
         """
@@ -56,7 +58,6 @@ class DataStream(threading.Thread):
         """
 
         print("Starting EventListener")
-        self.start_acquisition()
         while not self.stop_event.is_set():
             try:
                 parts = self.socket.recv_multipart(flags=zmq.NOBLOCK)
@@ -65,6 +66,7 @@ class DataStream(threading.Thread):
                     info = json.loads(parts[1].decode("utf-8"))
 
                     self.ttl_callback(info)
+
             except zmq.Again:
                 # No message received
                 pass
@@ -86,7 +88,7 @@ class DataStream(threading.Thread):
 
         print("event " + str(info['sample_number']))
         self.read_data()
-        while(self.data.shape[0] < info['sample_number']+ int(stream.event_snapshot_duration * stream.fs)):
+        while(self.data.shape[0] < (info['sample_number']+ int(self.event_snapshot_duration * self.fs))):
             self.read_data()
 
         self.events.append(info['sample_number'])
@@ -111,16 +113,18 @@ class DataStream(threading.Thread):
 
     def start_acquisition(self):
 
-
+        self.data =None
+        self.events = []
+        
         # Get path to the current user's Desktop
-        path = Path.home() / "Desktop" / "data"
-        data_folder= datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.data_path = path / data_folder
+        
+        self.data_folder= datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.data_path = self.path / self.data_folder
         self.file = self.data_path /r"Record Node 103\experiment1\recording1\continuous\File_Reader-100.NI-DAQmx-100.PXI-6289\continuous.dat"
         print(f"Desktop path: {self.data_path}")
         
-        self.gui.set_record_path(103, str(path))
-        self.gui.set_base_text(data_folder)
+        self.gui.set_record_path(103, str(self.path))
+        self.gui.set_base_text(self.data_folder)
         self.gui.record()
 
     def stop_acquistion(self):
@@ -133,5 +137,5 @@ class DataStream(threading.Thread):
         self.socket.close()
         self.context.term()
 
-# Initialize your data stream
+
 stream = DataStream()
