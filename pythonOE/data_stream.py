@@ -33,7 +33,8 @@ class DataStream(threading.Thread):
         self.fs = 1953 #Hz
         self.event_snapshot_duration = 0.1
         self.num_channel = 3072
-        
+        self.is_running = False
+
         self.stop_event = threading.Event()
         self.data =None
 
@@ -126,10 +127,12 @@ class DataStream(threading.Thread):
         self.gui.set_record_path(103, str(self.path))
         self.gui.set_base_text(self.data_folder)
         self.gui.record()
+        self.is_running = True
 
     def stop_acquistion(self):
 
         self.gui.idle()
+        self.is_running = False
 
     def stop(self):
         self.gui.idle()

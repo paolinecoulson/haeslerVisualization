@@ -26,14 +26,30 @@ class EventView:
         self.dropdown.on_change("value", self.update_type_event)
         
         plots = []
-        for i in range(self.n_channels):
+        p1 = figure(
+                height=150,
+                width=150,
+                tools="pan,wheel_zoom,reset",
+                toolbar_location=None,
+                title="C 0-" + str(4-1) + "\nL 0-"+ str(4-1) ,
+                output_backend="webgl",
+            )
+
+        p1.line(x="x", y="y", source=self.sources[0])
+        p1.xaxis.visible = False
+        p1.yaxis.visible = False
+
+        plots =[p1]
+
+        for i in range(1, self.n_channels):
             plot = figure(
                 height=150,
                 width=150,
                 tools="pan,wheel_zoom,reset",
                 toolbar_location=None,
                 title="C " + str((i%24)*4) + "-" + str((i%24+1)*4-1) + "\nL " + str(int(i/24)*4)+"-"+str(int(i/24+1)*4-1) ,
-                output_backend="webgl"
+                output_backend="webgl",
+                x_range=p1.x_range
             )
             plot.line(x="x", y="y", source=self.sources[i])
             plot.xaxis.visible = False
@@ -42,11 +58,9 @@ class EventView:
 
         grid = gridplot(plots, ncols=24) #96
 
-
-        # --- Label to display selected folder ---
         self.path_display = Div(text="Data acquisition path: <i>None</i>", width=200)
         self.folder_display = Div(text="Data acquisition folder: <i>None</i>", width=200)
-        # --- Buttons ---
+
         self.select_folder_btn = Button(label="Select Folder", button_type="primary")
         self.start_btn = Button(label="Start", button_type="success")
         self.stop_btn = Button(label="Stop", button_type="danger")
