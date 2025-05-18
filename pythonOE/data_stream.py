@@ -21,7 +21,7 @@ class DataStream(threading.Thread):
     def __init__(self, ip_address="127.0.0.1", port=5557):
         super().__init__()
         address = 'localhost' # IP address of the computer running Open Ephys
-
+        self.repaint = False
         self.gui = OpenEphysHTTPServer()
         self.daemon = True
         self.url = "tcp://%s:%d" % (ip_address, port)
@@ -36,8 +36,9 @@ class DataStream(threading.Thread):
         
         self.stop_event = threading.Event()
         self.data =None
-        self.last_event = 0
+
         print("Initialized EventListener at " + self.url)
+        self.events = []
 
     def run(self):
         """
@@ -85,7 +86,11 @@ class DataStream(threading.Thread):
 
         print("event " + str(info['sample_number']))
         self.read_data()
-        self.last_event = info['sample_number']
+        while(self.data.shape[0] < info['sample_number']+ int(stream.event_snapshot_duration * stream.fs)):
+            self.read_data()
+
+        self.events.append(info['sample_number'])
+        self.repaint = True
 
     def read_data(self):
         try: 

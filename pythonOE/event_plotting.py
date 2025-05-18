@@ -1,18 +1,33 @@
 import numpy as np
 from bokeh.layouts import gridplot
 from bokeh.plotting import figure, curdoc, column
-from bokeh.models import ColumnDataSource,  Select
+from bokeh.models import ColumnDataSource,  Dropdown, Select
 from data_stream import stream
+from bokeh.document import without_document_lock
+import asyncio
+from functools import partial
+from concurrent.futures import ThreadPoolExecutor
 
-# Number of plots (channels)
+global repaint
+repaint = False
+
 N_CHANNELS = 192
+doc = curdoc()
 
-# Initialize sources array
 sources = [ColumnDataSource(data=dict(x=[], y=[])) for _ in range(N_CHANNELS)]
+global event_type 
+event_type = "Average"
 
 
-dropdown = Select(title="Events:", value = "Average", options=["Average"])
-# Create plots
+def update_type_event(attr, old, new):
+    global event_type, repaint
+    event_type = new
+    repaint = True
+
+dropdown = Select(name = "Events:", value = "Average", options=["Average"])
+dropdown.on_change("value", update_type_event)
+
+
 plots = []
 for i in range(N_CHANNELS):
     plot = figure(
@@ -35,49 +50,65 @@ layout = column(dropdown, grid)
 stream.start()
 
 # Schedule source update on main thread
-
+global x_vals
 x_vals = list(range(int(stream.event_snapshot_duration * stream.fs)*2))
 
-def update_source():
 
-    if len(dropdown.options) > 1:
+doc.add_root(layout)
 
-        for i, source in enumerate(sources):
+# Executor for async tasks
+executor = ThreadPoolExecutor()
 
-                if dropdown.value == "Average":
-                    d = []
-                    for event_ts in dropdown.options: 
-                        if event_ts == "Average":
-                            continue 
-
-                        d.append(get_data_from_one_event(int(event_ts)))
-                    
-                    d = np.stack(d, axis=0)
-                    y_vals = np.mean(d, axis=0)
-                    
-                else: 
-                    print(dropdown.value)
-                    y_vals = get_data_from_one_event(int(dropdown.value))
-
-                source.data = {"x": x_vals, "y": y_vals}
-    
-    if str(stream.last_event) not in str(dropdown.options):
-        value = dropdown.value
-        dropdown.options.append(str(stream.last_event))
-        dropdown.value = value
-
-
-def get_data_from_one_event(event_ts):
-
-    start =event_ts- int(stream.event_snapshot_duration * stream.fs)
+# Helper: fetch and average data for one source
+def compute_data(i, event_ts):
+    start = event_ts - int(stream.event_snapshot_duration * stream.fs)
     end = min(event_ts + int(stream.event_snapshot_duration * stream.fs), len(stream.data))
-    data_slice = stream.data[start:end, int((i/24)*4):int((i/24 +1)*4), 
-                                                    int((i%24)*4):int((i%24 +1)*4)]
-
+    data_slice = stream.data[start:end, int((i/24)*4):int((i/24+1)*4), int((i%24)*4):int((i%24+1)*4)]
+    
     return np.mean(data_slice, axis=(1, 2)).tolist()
 
+def update_dropdown_options():
+    dropdown.options = ["Average"] + [str(ev) for ev in stream.events] 
 
 
-curdoc().add_root(layout)
-curdoc().add_periodic_callback(update_source, 100)
-curdoc().title = "Live Ephys Data"
+# Async wrapper for non-blocking execution
+@without_document_lock
+async def async_update_sources():
+    global repaint, x_vals
+    if stream.repaint or repaint:
+
+        doc.add_next_tick_callback(update_dropdown_options)
+        stream.repaint= False
+        repaint = False
+
+        def compute_all_channels(event_ts):
+            return [compute_data(i, event_ts) for i in range(N_CHANNELS)]
+
+        if event_type == "Average":
+            # Gather all individual event data and average
+
+            # Launch in background
+            all_data = await asyncio.gather(*[
+                asyncio.wrap_future(executor.submit(compute_all_channels, ts))
+                for ts in stream.events
+            ])
+
+            # Average across all events per channel
+            averaged = np.mean(all_data, axis=0)  # shape: [N_CHANNELS][T]
+            for i, source in enumerate(sources):
+                doc.add_next_tick_callback(partial(update_source, source, x_vals, averaged[i]))
+        else:
+            # Single event selected
+            event_ts = int(event_type)
+            one_data = await asyncio.wrap_future(executor.submit(compute_all_channels, event_ts))
+
+            for i, source in enumerate(sources):
+                doc.add_next_tick_callback(partial(update_source, source, x_vals, one_data[i]))
+
+
+def update_source(source, x_vals, y_vals):
+    source.data = {"x": x_vals, "y": y_vals}
+
+doc.add_periodic_callback(async_update_sources, 100)
+doc.title = "Live Ephys Data"
+
