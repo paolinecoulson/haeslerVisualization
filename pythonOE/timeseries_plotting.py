@@ -20,7 +20,7 @@ class TimeseriesView:
         spinner_column.on_change("value", self.update_column)
         spinner_line.on_change("value", self.update_row)
         curdoc().add_root(column(row(spinner_column, spinner_line), self.plot))
-        curdoc().add_periodic_callback(self.update, 500)
+        curdoc().add_periodic_callback(self.update, 1000)
         curdoc().title = "Timeseries View"
 
     def update_column(self, attr, old, new):
@@ -35,7 +35,7 @@ class TimeseriesView:
             x = list(range( self.stream.data.shape[0]))
             self.source.data = {"x": x, "y": self.stream.data[:, self.row-1, self.col-1]}
         
-            self.plot.x_range.start =  self.stream.data.shape[0]-1000
+            self.plot.x_range.start =  max(self.stream.data.shape[0]-2000, 0)
             self.plot.x_range.end = self.stream.data.shape[0]
 
 

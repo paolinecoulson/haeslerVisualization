@@ -1,7 +1,7 @@
 import numpy as np
 from bokeh.layouts import gridplot
 from bokeh.plotting import figure, curdoc, column, row
-from bokeh.models import ColumnDataSource,  Dropdown, Select, Div, Button
+from bokeh.models import ColumnDataSource,  Dropdown, Select, Div, Button,  Spinner
 from data_stream import stream
 from bokeh.document import without_document_lock
 import asyncio
@@ -57,6 +57,9 @@ class EventView:
             plots.append(plot)
 
         grid = gridplot(plots, ncols=24) #96
+        
+        spinner_duration = Spinner(title="Event duration (ms): ", low=0, high=100, step=10, value=1, width=200)
+        spinner_duration.on_change("value", self.update_snapshot)
 
         self.path_display = Div(text="Data acquisition path: <i>None</i>", width=200)
         self.folder_display = Div(text="Data acquisition folder: <i>None</i>", width=200)
@@ -72,18 +75,20 @@ class EventView:
         self.select_folder_btn.on_click(self.select_folder)
 
         param_layout = row(self.select_folder_btn, self.start_btn, self.stop_btn)
-        file_layout = row(self.path_display, self.folder_display)
+        file_layout = row(self.path_display, self.folder_display, spinner_duration)
         layout = column(param_layout, file_layout, self.dropdown, grid)
 
         self.stream = stream
-    
-        self.x_vals = list(range(int(self.stream.event_snapshot_duration * self.stream.fs)*2))
 
         self.doc.add_root(layout)
-        self.doc.add_periodic_callback(self.async_update_sources, 100)
+        self.doc.add_periodic_callback(self.async_update_sources, 500)
         self.doc.title = "Event live plotting"
 
-
+    def update_snapshot(self, attr, old, new ):
+        self.stream.event_snapshot_duration = new/1000
+        print(self.stream.event_snapshot_duration)
+        repaint = True
+        
     def select_folder(self):
         root = tk.Tk()
         root.attributes('-topmost', True)
@@ -114,6 +119,7 @@ class EventView:
 
 
     def compute_data(self, i, event_ts):
+        self.x_vals = list(range(int(self.stream.event_snapshot_duration * self.stream.fs)*2))
         start = event_ts - int(self.stream.event_snapshot_duration * self.stream.fs)
         end = min(event_ts + int(self.stream.event_snapshot_duration * self.stream.fs), len(self.stream.data))
         data_slice = stream.data[start:end, int((i/24)*4):int((i/24+1)*4), int((i%24)*4):int((i%24+1)*4)]
@@ -126,7 +132,6 @@ class EventView:
     def compute_all_channels(self, event_ts):
         return [self.compute_data(i, event_ts) for i in range(self.n_channels)]
         
-    # Async wrapper for non-blocking execution
     @without_document_lock
     async def async_update_sources(self):
 
@@ -156,5 +161,7 @@ class EventView:
 
     def update_source(self, source, x_vals, y_vals):
         source.data = {"x": x_vals, "y": y_vals}
+        self.plot.x_range.start =  self.x_vals[0]
+        self.plot.x_range.end = self.x_vals[-1]
 
 ev = EventView(stream)
