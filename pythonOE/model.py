@@ -1,0 +1,81 @@
+import cupy as cp
+import numpy as np
+import time 
+
+
+class Model:
+
+    def __init__(self, num_channel, nbr_col, nbr_line, col_divider, line_divider):
+
+        self.fs = 1953 #Hz
+        self.event_snapshot_duration = 0.1
+        self.data_event = dict()
+
+        self.num_channel = num_channel
+        self.nbr_col=nbr_col
+        self.nbr_line= nbr_line
+        self.col_divider=col_divider
+        self.line_divider= line_divider
+
+    def reset_xy(self, event_duration=100):
+        self.event_snapshot_duration = event_duration/1000
+        self.snapshot_len = int(self.event_snapshot_duration * self.fs)
+        self.x = np.arange(int(self.event_snapshot_duration * self.fs)*2)
+        
+        y = np.zeros(int(self.event_snapshot_duration * self.fs)*2)
+        return self.x, y 
+
+    def read_data(self):
+        try: 
+            data = np.memmap(self.file, mode="r", dtype="int16")
+            samples = data.reshape(
+                    (
+                        len(data) // self.num_channel,
+                        self.num_channel,
+                    )
+            )
+        except ValueError:
+            time.sleep(1)
+            print("retry reading file.")
+            self.read_data()
+            return
+
+        self.data = samples.reshape(-1, self.nbr_line, self.nbr_col)
+
+    def get_full_signal(self, channel):
+        return self.read_data()[:, channel]
+
+    def get_event(self, ts):
+        return self.data_event[ts]
+
+    def add_event(self, info):
+        print("event " + str(info['sample_number']))
+
+        self.read_data()
+        while(self.data.shape[0] < (info['sample_number']+ int(self.event_snapshot_duration * self.fs))):
+            self.read_data()
+
+        channels = self.compute_event(info['sample_number'])
+
+    def compute_event(self, event_ts):
+        
+        # Slice the full data snapshot: shape [T, H, W]
+        data_slice = self.data[event_ts - self.snapshot_len:event_ts + self.snapshot_len]  # shape [T, 32, 96]
+        data_slice = filter(data_slice)
+        # Move to GPU
+        data_gpu = cp.asarray(data_slice)
+
+        # We'll split this into 192 "channels", where each is a 4x4 patch
+        # So reshape to [T, 8, 4, 24, 4] → [192, T, 4, 4]
+        reshaped = data_gpu.reshape((data_gpu.shape[0], int(self.nbr_line/self.line_divider), self.line_divider, int(self.nbr_col/self.col_divider), self.col_divider))
+        reshaped = reshaped.transpose(1, 3, 0, 2, 4).reshape((int(self.num_channel/(self.col_divider*self.line_divider)), data_gpu.shape[0], self.line_divider, self.col_divider))
+
+        # Compute mean over 4x4 (last two axes): → [192, T]
+        meaned = cp.mean(reshaped, axis=(2, 3))
+
+        # Return to CPU as list of arrays
+        self.data_event[event_ts] = meaned.get().tolist()
+
+    
+def filter(data):
+    return data

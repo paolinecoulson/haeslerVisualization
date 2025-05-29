@@ -34,9 +34,5 @@ class TimeseriesView:
             self.stream.read_data()
             x = list(range( self.stream.data.shape[0]))
             self.source.data = {"x": x, "y": self.stream.data[:, self.row-1, self.col-1]}
-        
-            self.plot.x_range.start =  max(self.stream.data.shape[0]-2000, 0)
-            self.plot.x_range.end = self.stream.data.shape[0]
-
 
 TimeseriesView()
