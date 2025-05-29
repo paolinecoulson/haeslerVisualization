@@ -1,7 +1,7 @@
 import numpy as np
 from bokeh.layouts import gridplot
 from bokeh.plotting import figure, curdoc, column, row
-from bokeh.models import ColumnDataSource,  Dropdown, Select, Div, Button,  Spinner
+from bokeh.models import ColumnDataSource,  Dropdown, Select, Div, Button,  Spinner, Checkbox, InlineStyleSheet, Spacer
 from data_stream import stream, controller
 from bokeh.document import without_document_lock
 import asyncio
@@ -10,6 +10,16 @@ from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from tkinter import filedialog
 
+
+style = InlineStyleSheet(css="""
+        :host(.box-element) {
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            background-color: #f9f9f9;
+        }
+        """)
 
 class EventView:
     def __init__(self, controller):
@@ -21,21 +31,18 @@ class EventView:
         self.n_channels = 192
         self.doc = curdoc()
 
-        spinner_duration = Spinner(title="Event duration (ms): ", low=0, high=100, step=10, value=100, width=100)
+        spinner_duration = Spinner(title="Event duration (ms): ", low=0, high=100, step=10, value=100, width=150)
         spinner_duration.on_change("value", self.update_snapshot)
 
 
-        self.spinner_nbr_events = Spinner(title="Number of events to record : ", low=0, high=10, step=1, value=4, width=100)
+        self.spinner_nbr_events = Spinner(title="Number of events to record : ", low=0, high=10, step=1, value=4, width=160)
         self.spinner_nbr_events.on_change("value", self.update_spinner_nbr_events)
 
-        x, y = self.controller.model.reset_xy(event_duration=100)
-        self.sources = [ColumnDataSource(data=dict(x=x, y=y)) for _ in range(self.n_channels)]
-        
-        self.dropdown = Select(name = "Events:", value = self.controller.event_type, options=[self.controller.event_type])
+        self.dropdown = Select(title = "Event type:", value = self.controller.event_type, options=[self.controller.event_type])
         self.dropdown.on_change("value", self.update_type_event)
         
-        self.path_display = Div(text="Data acquisition path: <i>None</i>", width=200)
-        self.folder_display = Div(text="Data acquisition folder: <i>None</i>", width=500)
+        self.path_display = Div(text="Data acquisition path: <i>None</i>", width=300)
+        self.folder_display = Div(text="Data acquisition folder: <i>None</i>", width=200)
 
         self.select_folder_btn = Button(label="Select Folder", button_type="primary")
         self.start_btn = Button(label="Start", button_type="success")
@@ -48,18 +55,21 @@ class EventView:
         self.select_folder_btn.on_click(self.select_folder)
 
         param_layout = row(self.select_folder_btn, self.start_btn, self.stop_btn)
-        file_layout = row(self.path_display, self.folder_display, spinner_duration, self.spinner_nbr_events)
-        layout = column(param_layout, file_layout, self.dropdown)
+        file_layout = row(self.path_display, self.folder_display)
+        
         
         filter_param_layout = self.setup_filter_param()
-        hidden_param_layout = column(filter_param_layout)
+        probe_param_layout = self.setup_probe_param()
+        event_param_layout = self.setup_event_param()
 
+        hidden_param_layout = row(probe_param_layout,  Spacer(width=10), filter_param_layout, Spacer(width=10),  event_param_layout)
+        layout = column(row(column(param_layout, file_layout,  stylesheets = [style], css_classes = ['box-element']), Spacer(width=10),
+                        row(self.dropdown, spinner_duration, self.spinner_nbr_events,  stylesheets = [style], css_classes = ['box-element'])),
+                        hidden_param_layout, 
+                        )
 
-        self.doc.add_root(column(layout, hidden_param_layout))
-        
+        self.doc.add_root(layout)
         self.doc.title = "Event live plotting"
-
-        self.setup_event_view()
 
     def setup_filter_param(self):
         lowcut_spin = Spinner(title="Low cutoff frequency: ", low=0.5, high=500, step=1, value=1, width=150)
@@ -82,34 +92,96 @@ class EventView:
         return self.setup_hidden_param(hidden_section, "filter")
 
     def setup_probe_param(self):
+        self.nrows = 32
+        self.ncols = 96
+        self.row_divider = 4
+        self.col_divider = 4
+
+        ch_col_spin = Spinner(title="Column: ", low=1, high=100, step=1, value=self.ncols, width=100)
+        ch_row_spin = Spinner(title="Row   : ", low=1, high=100, step=1, value=self.nrows, width=100)
+        
+        dis_col_spin = Spinner(title="       ", low=1, high=100, step=1, value=self.col_divider, width=100)
+        dis_row_spin = Spinner(title="       ", low=1, high=100, step=1, value=self.row_divider, width=100)
+        
+        self.load_button = Button(label=f"Load probe view", button_type="primary")
 
         hidden_section = column(
-                    Div(text="Bandpass filter parameters :"),
-                    Div(text="It can contain any Bokeh layout."),
+
+                    row(Div(text="Probe   :"), ch_col_spin,  ch_row_spin),
+                    row(Div(text="Display :"), dis_col_spin,  dis_row_spin),
+                    self.load_button
                 )
+        
+        def update_ch_row(attr, old, new):
+            self.nrows = new
+
+        def update_ch_col(attr, old, new):
+            self.ncols = new
+
+        def update_dis_col_spin(attr, old, new):
+            self.col_divider = new
+
+        def update_dis_row_spin(attr, old, new):
+            self.row_divider = new
+
+        def create_view_button():
+            validated = self.controller.setup_event_view(self.ncols*self.nrows, self.ncols, self.nrows, self.col_divider, self.row_divider)
+            if not validated: 
+                dis_col_spin.value = ch_col_spin.value
+                dis_row_spin.value = ch_row_spin.value
+
+            x, y = self.controller.model.reset_xy(event_duration=100)
+            self.sources = [ColumnDataSource(data=dict(x=x, y=y)) for _ in range(self.n_channels)]
+            self.setup_event_view()
+
+        ch_col_spin.on_change("value", update_ch_col)
+        ch_row_spin.on_change("value", update_ch_row)
+        dis_col_spin.on_change("value", update_dis_col_spin)
+        dis_row_spin.on_change("value", update_dis_row_spin)
+
+        self.load_button.on_click(create_view_button)
                 
-        hidden_section.visible = True  # Start hidden
+        hidden_section.visible = True  
         return self.setup_hidden_param(hidden_section, "probe")
 
     def setup_event_param(self):
+        checkboxes = [Checkbox(label=f"Line {i}", active=False, width=60) for i in range(32)]
+        def checkbox_callback(attr, old, new, idx):
+            if new:
+                self.controller.add_event_line(idx)
+            else: 
+                self.controller.remove_event_line(idx)
+
+        for i, cb in enumerate(checkboxes):
+            if i == 8:
+                cb.active = True
+                
+            cb.on_change("active", lambda attr, old, new, i=i: checkbox_callback(attr, old, new, i))
+
+
+
+        rows = [checkboxes[i::4] for i in range(4)]
+        checkbox_grid = gridplot(rows)
+
         hidden_section = column(
-                    Div(text="Average few events."),
-                    Div(text="It can contain any Bokeh layout."),
+                    Div(text="Select event trigger:"),
+                    checkbox_grid
                 )
                 
         hidden_section.visible = False  # Start hidden
         return self.setup_hidden_param(hidden_section, "events")
 
     def setup_hidden_param(self, hidden_section, label):
-        toggle_button = Button(label=f"Show {label} Settings", button_type="primary")
+        toggle_button = Button(label="", button_type="primary")
+        toggle_button.label = f"Hide {label} Settings" if hidden_section.visible else f"Show {label} Settings"
 
         def toggle_section():
             hidden_section.visible = not hidden_section.visible
             toggle_button.label = f"Hide {label} Settings" if hidden_section.visible else f"Show {label} Settings"
 
         toggle_button.on_click(toggle_section)
-
-        return column(toggle_button, hidden_section)
+        
+        return column(toggle_button, hidden_section, stylesheets = [style], css_classes = ['box-element'])
 
 
     def setup_event_view(self):
@@ -179,6 +251,7 @@ class EventView:
         self.start_btn.disabled = True 
         self.select_folder_btn.disabled = True
         self.spinner_nbr_events.disabled = True
+        self.load_button.disabled = True
 
     def stop_acquistion_from_thread(self): 
         self.doc.add_next_tick_callback(self.stop_acquistion)
@@ -188,7 +261,8 @@ class EventView:
         self.start_btn.disabled = False 
         self.select_folder_btn.disabled = False
         self.spinner_nbr_events.disabled = False
-
+        self.load_button.disabled = False
+        
     def update_type_event(self, attr, old, new):
         self.controller.event_type = new
         self.update_sources()

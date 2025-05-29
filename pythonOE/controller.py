@@ -12,11 +12,14 @@ class Controller:
         self.selected_folder =  None
         self.is_running = False
         self.event_type = "Average"
-        self.setup_event_view(3072, 96, 32, 4, 4)
+
         self.nbr_events = 4
         self.nbr_event_received = 0
         self.events= dict()
-        
+        self.register_line = np.zeros(32)
+        self.register_line[8] = 1
+
+
     def set_view_callback(self, view):
         self.view = view 
 
@@ -37,16 +40,31 @@ class Controller:
         return self.selected_folder, self.data_folder
 
     def setup_event_view(self, num_channel, nb_col, nb_line, col_divider, line_divider):
-        assert(nb_col % col_divider == 0)
-        assert(nb_line % line_divider == 0)   
+        if(nb_col % col_divider != 0):
+            return False
+
+        if(nb_line % line_divider != 0):
+            return False   
         self.model = Model(num_channel, nb_col, nb_line, col_divider, line_divider)
+        return True
+
+    def add_event_line(self, line):
+        self.register_line[line] = 1
+
+    def remove_event_line(self, line):
+        self.register_line[line] = 0
 
     def add_event(self, info):
+
+        if not self.register_line[info["line"]]:
+            print("Event from line " + str(info["line"]) + " ignored")
+            return 
 
         self.nbr_event_received +=1
 
         if self.nbr_events != 0 and self.nbr_event_received > self.nbr_events:
             return 
+
 
         print("Event occurred on TTL line " 
                 + str(info['line']) 
