@@ -28,7 +28,6 @@ class EventView:
         self.spinner_nbr_events = Spinner(title="Number of events to record : ", low=0, high=10, step=1, value=4, width=100)
         self.spinner_nbr_events.on_change("value", self.update_spinner_nbr_events)
 
-
         x, y = self.controller.model.reset_xy(event_duration=100)
         self.sources = [ColumnDataSource(data=dict(x=x, y=y)) for _ in range(self.n_channels)]
         
@@ -51,11 +50,67 @@ class EventView:
         param_layout = row(self.select_folder_btn, self.start_btn, self.stop_btn)
         file_layout = row(self.path_display, self.folder_display, spinner_duration, self.spinner_nbr_events)
         layout = column(param_layout, file_layout, self.dropdown)
+        
+        filter_param_layout = self.setup_filter_param()
+        hidden_param_layout = column(filter_param_layout)
 
-        self.doc.add_root(layout)
+
+        self.doc.add_root(column(layout, hidden_param_layout))
+        
         self.doc.title = "Event live plotting"
 
         self.setup_event_view()
+
+    def setup_filter_param(self):
+        lowcut_spin = Spinner(title="Low cutoff frequency: ", low=0.5, high=500, step=1, value=1, width=150)
+        highcut_spin = Spinner(title="High cutoff frequency: ", low=40, high=4000, step=10, value=200, width=150)
+        hidden_section = row(
+                    Div(text="Bandpass filter parameters :"),
+                    column(lowcut_spin,  highcut_spin)
+                )
+        
+        def update_spinner_lc(attr, old, new):
+            self.controller.update_freq(lc=new)
+
+        def update_spinner_hc(attr, old, new):
+            self.controller.update_freq(hc=new)
+
+        lowcut_spin.on_change("value", update_spinner_lc)
+        highcut_spin.on_change("value", update_spinner_hc)
+                
+        hidden_section.visible = False  
+        return self.setup_hidden_param(hidden_section, "filter")
+
+    def setup_probe_param(self):
+
+        hidden_section = column(
+                    Div(text="Bandpass filter parameters :"),
+                    Div(text="It can contain any Bokeh layout."),
+                )
+                
+        hidden_section.visible = True  # Start hidden
+        return self.setup_hidden_param(hidden_section, "probe")
+
+    def setup_event_param(self):
+        hidden_section = column(
+                    Div(text="Average few events."),
+                    Div(text="It can contain any Bokeh layout."),
+                )
+                
+        hidden_section.visible = False  # Start hidden
+        return self.setup_hidden_param(hidden_section, "events")
+
+    def setup_hidden_param(self, hidden_section, label):
+        toggle_button = Button(label=f"Show {label} Settings", button_type="primary")
+
+        def toggle_section():
+            hidden_section.visible = not hidden_section.visible
+            toggle_button.label = f"Hide {label} Settings" if hidden_section.visible else f"Show {label} Settings"
+
+        toggle_button.on_click(toggle_section)
+
+        return column(toggle_button, hidden_section)
+
 
     def setup_event_view(self):
 
@@ -151,7 +206,7 @@ class EventView:
     
     def update(self, source, x, y):
         source.data = {"x": x, "y": y}
-        self.p1.x_range.start =  x[0]
-        self.p1.x_range.end = x[-1]
+        #self.p1.x_range.start =  x[0]
+        #self.p1.x_range.end = x[-1]
 
 ev = EventView(controller)

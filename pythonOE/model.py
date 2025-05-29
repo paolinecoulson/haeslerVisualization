@@ -17,11 +17,14 @@ class Model:
         self.col_divider=col_divider
         self.line_divider= line_divider
 
+        self.lc = 1
+        self.hc = 200
+
     def reset_xy(self, event_duration=100):
         self.event_snapshot_duration = event_duration/1000
         self.snapshot_len = int(self.event_snapshot_duration * self.fs)
         self.x = np.arange(int(self.event_snapshot_duration * self.fs)*2)
-        
+
         y = np.zeros(int(self.event_snapshot_duration * self.fs)*2)
         return self.x, y 
 
@@ -61,7 +64,7 @@ class Model:
         
         # Slice the full data snapshot: shape [T, H, W]
         data_slice = self.data[event_ts - self.snapshot_len:event_ts + self.snapshot_len]  # shape [T, 32, 96]
-        data_slice = filter(data_slice)
+        data_slice = apply_bandpass_filter(data_slice, self.fs, lowcut=self.lc, highcut=self.hc)
         # Move to GPU
         data_gpu = cp.asarray(data_slice)
 
@@ -77,5 +80,17 @@ class Model:
         self.data_event[event_ts] = meaned.get().tolist()
 
     
-def filter(data):
-    return data
+from scipy.signal import butter, filtfilt
+
+def butter_bandpass(lowcut, highcut, fs, order=4):
+    nyq = 0.5 * fs
+    low = lowcut / nyq
+    high = highcut / nyq
+    b, a = butter(order, [low, high], btype="band")
+    return b, a
+
+def apply_bandpass_filter(data, fs, lowcut=1, highcut=200, order=4):
+    b, a = butter_bandpass(lowcut, highcut, fs, order)
+    # Apply filter along the time axis (axis=0)
+    filtered = filtfilt(b, a, data, axis=0)
+    return filtered

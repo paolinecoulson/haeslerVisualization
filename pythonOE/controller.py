@@ -14,7 +14,9 @@ class Controller:
         self.event_type = "Average"
         self.setup_event_view(3072, 96, 32, 4, 4)
         self.nbr_events = 4
-
+        self.nbr_event_received = 0
+        self.events= dict()
+        
     def set_view_callback(self, view):
         self.view = view 
 
@@ -23,6 +25,7 @@ class Controller:
         
         self.data = None
         self.events= dict()
+        self.nbr_event_received = 0
         self.special_events= dict(Average=[])
         self.model.data_event = dict()
 
@@ -40,8 +43,9 @@ class Controller:
 
     def add_event(self, info):
 
-         
-        if self.nbr_events != 0 and len(self.events) >= self.nbr_events:
+        self.nbr_event_received +=1
+
+        if self.nbr_events != 0 and self.nbr_event_received > self.nbr_events:
             return 
 
         print("Event occurred on TTL line " 
@@ -53,7 +57,7 @@ class Controller:
         def add_event_in_thread():
             self.model.add_event(info)
 
-            if self.nbr_events != 0 and len(self.events)+1 >= self.nbr_events:
+            if self.nbr_events != 0 and self.nbr_event_received >= self.nbr_events:
                 self.view.stop_acquistion_from_thread()
 
             self.view.add_dropdown_options(str(info['sample_number']))
@@ -75,6 +79,20 @@ class Controller:
             self.model.compute_event(self.events[value])
 
         self.view.update_sources()
+    
+    def update_freq(self, lc=None, hc=None):
+
+        if lc is not None:
+            self.model.lc = lc
+        
+        if hc is not None:
+            self.model.hc = hc 
+
+        for value in self.events:
+            self.model.compute_event(self.events[value])
+
+        self.view.update_sources()
+
 
     def get_data_event(self):
 
