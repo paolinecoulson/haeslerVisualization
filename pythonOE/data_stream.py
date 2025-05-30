@@ -70,6 +70,9 @@ class DataStream(threading.Thread):
                 break
         
     def start_acquisition(self):
+        if self.gui.status() != "IDLE":
+            self.gui.idle()
+
         path, folder = self.controller.setup_file_folder()
         self.gui.set_record_path(103, str(path))
         self.gui.set_base_text(folder)
