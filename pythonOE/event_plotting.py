@@ -19,6 +19,7 @@ style = InlineStyleSheet(css = """
   border-radius: 8px;
   padding: 15px;
   background-color: #f9f9f9;
+  margin: 2px 2px;
   position: relative;
 }
 
@@ -58,8 +59,8 @@ class EventView:
         self.dropdown = Select(value = self.controller.event_type, options=[self.controller.event_type])
         self.dropdown.on_change("value", self.update_type_event)
         
-        self.path_display = Div(text="Data acquisition path: <i>None</i>", width=300)
-        self.folder_display = Div(text="Data acquisition folder: <i>None</i>", width=200)
+        self.path_display = Div(text="Data acquisition path: <i>None</i>", width=260)
+        self.folder_display = Div(text="Data acquisition folder: <i>None</i>", width=260)
 
         self.select_folder_btn = Button(label="Select Folder", icon = TablerIcon(icon_name="folder-search", size=16), button_type="primary")
         
@@ -83,9 +84,10 @@ class EventView:
         config_layout = self.manage_config_file()
 
 
-        layout = column(row(column(config_layout, column(param_layout, file_layout,  stylesheets = [style], css_classes = ['box-element'])), Spacer(width=10),
+        layout = column(row(config_layout,
+                            column(param_layout, file_layout,  stylesheets = [style], css_classes = ['box-element']),
                             column(row(self.dropdown, add_event_layout), row(self.spinner_duration, self.spinner_nbr_events),  stylesheets = [style], css_classes = ['box-element'])),
-                        row(self.probe_param_layout,  Spacer(width=10), self.filter_param_layout, Spacer(width=10),  self.event_param_layout), 
+                        row(self.probe_param_layout, self.filter_param_layout,  self.event_param_layout), 
                         )
 
         self.doc.add_root(layout)
@@ -96,13 +98,13 @@ class EventView:
         file_input = FileInput(accept=".json")
         download_button = Button(label="Save config",  stylesheets = [style], css_classes=["toggle-button"])
 
-        json_div = Div(text=json.dumps(self.get_config_param(), indent=2))  # <-- holds the data
+        json_div = Div(text=json.dumps(self.get_config_param(), indent=2)) 
         json_div.visible = False
 
         def update_params():
-            json_div.text = json.dumps(self.get_config_param(), indent=2)  # Update dynamically
+            json_div.text = json.dumps(self.get_config_param(), indent=2) 
 
-        download_button = Button(label="Download JSON", button_type="success")
+        download_button = Button(label="Download config", button_type="primary")
 
         download_button.js_on_click(CustomJS(args=dict(div=json_div), code="""
             const data = div.text;
@@ -127,7 +129,7 @@ class EventView:
 
         file_input.on_change("value", file_loaded)
 
-        return column(title_label, row(file_input, download_button, json_div),  stylesheets = [style], css_classes = ['box-element'])
+        return column(title_label, file_input, download_button, json_div,  stylesheets = [style], css_classes = ['box-element'])
 
 
     def setup_create_event(self):
