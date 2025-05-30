@@ -179,7 +179,8 @@ class EventView:
         config["event duration"] = self.spinner_duration.value
         config["filter setting"] = {
                 "low frequency band": self.controller.lc, 
-                "high frequency band": self.controller.hc 
+                "high frequency band": self.controller.hc,
+                "order": self.controller.order 
         }
         
         if self.controller.model is not None:
@@ -215,6 +216,7 @@ class EventView:
 
         if "filter setting" in config: 
 
+            self.filter_param_layout.children[1].children[1].children[2].value = config["filter setting"]["order"]
             self.filter_param_layout.children[1].children[1].children[0].value = config["filter setting"]["low frequency band"]
             self.filter_param_layout.children[1].children[1].children[1].value = config["filter setting"]["high frequency band"]
 
@@ -225,11 +227,16 @@ class EventView:
     def setup_filter_param(self):
         lowcut_spin = Spinner(title="Low cutoff frequency: ", low=0.5, high=500, step=1, value=1, width=150)
         highcut_spin = Spinner(title="High cutoff frequency: ", low=40, high=4000, step=10, value=200, width=150)
+        order_spin = Spinner(title="Order: ", low=1, high=100, step=1, value=4, width=150)
         hidden_section = row(
                     Div(text="Bandpass filter parameters :"),
-                    column(lowcut_spin,  highcut_spin),  stylesheets = [style], css_classes=["box-element"]
+                    column(lowcut_spin,  highcut_spin, order_spin),  stylesheets = [style], css_classes=["box-element"]
                 )
         
+        def update_spinner_order(attr, old, new):
+            self.controller.update_freq(order=new)
+            self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
+
         def update_spinner_lc(attr, old, new):
             if new < highcut_spin.value:
                 self.controller.update_freq(lc=new)

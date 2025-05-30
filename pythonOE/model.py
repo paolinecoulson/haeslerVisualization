@@ -19,6 +19,7 @@ class Model:
 
         self.lc = 1
         self.hc = 200
+        self.order = 4
         self.data = None
 
     def reset_xy(self, event_duration=100):
@@ -66,7 +67,7 @@ class Model:
     def compute_event(self, event_ts):
 
         data_slice = self.data[event_ts - self.snapshot_len:event_ts + self.snapshot_len]
-        data_slice = apply_bandpass_filter(data_slice, self.fs, lowcut=self.lc, highcut=self.hc)
+        data_slice = apply_bandpass_filter(data_slice, self.fs, lowcut=self.lc, highcut=self.hc, order=self.order)
 
         reshaped = data_slice.reshape((data_slice.shape[0], int(self.nbr_row/self.row_divider), self.row_divider, int(self.nbr_col/self.col_divider), self.col_divider))
         reshaped = reshaped.transpose(1, 3, 0, 2, 4).reshape((int(self.num_channel/(self.col_divider*self.row_divider)), data_slice.shape[0], self.row_divider, self.col_divider))
@@ -77,7 +78,7 @@ class Model:
     def get_full_signal(self, nrow, ncol):
         data = self.data[:, nrow, ncol]
         try: 
-            data = apply_bandpass_filter(data, self.fs, lowcut=self.lc, highcut=self.hc)
+            data = apply_bandpass_filter(data, self.fs, lowcut=self.lc, highcut=self.hc, order=self.order)
         except Exception as error: 
             print(str(error))
             pass

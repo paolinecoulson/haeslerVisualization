@@ -47,6 +47,7 @@ class Controller:
         self.model.reset_xy(self.event_duration)
         self.model.lc = self.lc
         self.model.hc = self.hc
+        self.model.order = self.order
 
     def add_event_line(self, line):
         self.register_line[line] = 1
@@ -100,7 +101,9 @@ class Controller:
 
         self.view.update_sources()
     
-    def update_freq(self, lc=None, hc=None):
+    def update_freq(self, lc=None, hc=None, order=None):
+        if order is not None:
+            self.order = order
 
         if lc is not None:
             self.lc = lc 
@@ -113,6 +116,7 @@ class Controller:
         
         self.model.lc = self.lc
         self.model.hc = self.hc
+        self.model.order = self.order
 
         for value in self.events:
             self.model.compute_event(self.events[value])
