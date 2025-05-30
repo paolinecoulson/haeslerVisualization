@@ -1,7 +1,7 @@
 import numpy as np
 from bokeh.layouts import gridplot
 from bokeh.plotting import figure, curdoc, column, row
-from bokeh.models import ColumnDataSource,  Dropdown, Select, Div, Button,  Spinner, Checkbox, InlineStyleSheet, Spacer, TablerIcon, Span, DataRange1d
+from bokeh.models import ColumnDataSource, TextInput, Dropdown, Select, Div, Button,  Spinner, Checkbox, InlineStyleSheet, Spacer, TablerIcon, Span, DataRange1d
 from data_stream import stream, controller
 from bokeh.document import without_document_lock
 import asyncio
@@ -63,15 +63,59 @@ class EventView:
         filter_param_layout = self.setup_filter_param()
         probe_param_layout = self.setup_probe_param()
         event_param_layout = self.setup_event_param()
+        add_event_layout = self.setup_create_event()
 
         hidden_param_layout = row(probe_param_layout,  Spacer(width=10), filter_param_layout, Spacer(width=10),  event_param_layout)
         layout = column(row(column(param_layout, file_layout,  stylesheets = [style], css_classes = ['box-element']), Spacer(width=10),
-                        row(self.dropdown, spinner_duration, self.spinner_nbr_events,  stylesheets = [style], css_classes = ['box-element'])),
+                        row(self.dropdown, add_event_layout, spinner_duration, self.spinner_nbr_events,  stylesheets = [style], css_classes = ['box-element'])),
                         hidden_param_layout, 
                         )
 
         self.doc.add_root(layout)
         self.doc.title = "Event live plotting"
+
+    def setup_create_event(self):
+        self.events_section = column()
+        self.events_checkbox = []
+
+        add_btn = Button(label="Add new event")
+        label = TextInput(title="Name your new average event: ", placeholder="")
+        hidden_section = column(
+                            label,
+                            self.events_section, 
+                            add_btn
+                        )
+        def add_event_select():
+            ev = []
+            if label.value == "":
+                return 
+
+            for chb in self.events_section.children: 
+                if chb.active: 
+                    ev.append(int(chb.label))
+            
+            if len(ev) > 0 : 
+                self.controller.special_events[label.value] = ev
+                self.add_dropdown_options(label.value)
+                label.value = ""
+                print(f"Add an event {label.value} that average {str(ev)} events")
+                
+        add_btn.on_click(add_event_select)
+        hidden_section.visible = False  
+
+        icon_open = TablerIcon(icon_name="circle-minus", size=16)
+        icon_close = TablerIcon(icon_name="circle-plus", size=16)
+
+        toggle_button = Button(label="", button_type="primary")
+        toggle_button.icon = icon_open if hidden_section.visible else icon_close
+        
+        def toggle_section():
+            hidden_section.visible = not hidden_section.visible
+            toggle_button.icon = icon_open if hidden_section.visible else icon_close
+
+        toggle_button.on_click(toggle_section)
+        
+        return column(toggle_button, hidden_section)
 
     def setup_filter_param(self):
         lowcut_spin = Spinner(title="Low cutoff frequency: ", low=0.5, high=500, step=1, value=1, width=150)
@@ -298,6 +342,11 @@ class EventView:
         def update():
             if option not in self.dropdown.options:
                 self.dropdown.options = self.dropdown.options + [option]
+                ev = Checkbox(label=f"{option}", active=False, width=60) 
+
+                self.events_section.children.append(ev)
+
+
         self.doc.add_next_tick_callback(update)
 
     def update_sources(self):
