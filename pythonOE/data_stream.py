@@ -77,11 +77,11 @@ class DataStream(threading.Thread):
         self.gui.set_record_path(103, str(path))
         self.gui.set_base_text(folder)
         self.gui.record()
-        self.is_running = True
+        self.controller.is_running = True
 
     def stop_acquistion(self):
         self.gui.idle()
-        self.is_running = False
+        self.controller.is_running = False
 
     def stop(self):
         self.gui.idle()

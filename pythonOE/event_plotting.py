@@ -1,7 +1,7 @@
 import numpy as np
 from bokeh.layouts import gridplot
 from bokeh.plotting import figure, curdoc, column, row
-from bokeh.models import ColumnDataSource, TextInput, Dropdown, Select, Div, Button,  Spinner, Checkbox, InlineStyleSheet, Spacer, TablerIcon, Span, DataRange1d
+from bokeh.models import ColumnDataSource, TextInput, CustomJS, FileInput, Dropdown, Select, Div, Button,  Spinner, Checkbox, InlineStyleSheet, Spacer, TablerIcon, Span, DataRange1d
 from data_stream import stream, controller
 from bokeh.document import without_document_lock
 import asyncio
@@ -10,16 +10,31 @@ from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from tkinter import filedialog
 import threading
+import json 
+import base64
 
-style = InlineStyleSheet(css="""
-        :host(.box-element) {
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 20px;
-            background-color: #f9f9f9;
-        }
-        """)
+style = InlineStyleSheet(css = """
+:host(.box-element) {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 15px;
+  background-color: #f9f9f9;
+  position: relative;
+}
+
+.toggle-button {
+  position: absolute;
+  top: -12px;
+  background-color: white;
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  font-weight: bold;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+""")
 
 class EventView:
     def __init__(self, controller):
@@ -32,14 +47,15 @@ class EventView:
         self.doc = curdoc()
         self.grid = None
         self.container = column()
+        self.sources = None
 
-        spinner_duration = Spinner(title="Event duration (ms): ", low=0, high=1000, step=10, value=100, width=150)
-        spinner_duration.on_change("value", self.update_snapshot)
+        self.spinner_duration = Spinner(title="Event duration (ms): ", low=0, high=1000, step=10, value=100, width=150)
+        self.spinner_duration.on_change("value", self.update_snapshot)
 
         self.spinner_nbr_events = Spinner(title="Number of events to record : ", low=0, high=10, step=1, value=4, width=160)
         self.spinner_nbr_events.on_change("value", self.update_spinner_nbr_events)
 
-        self.dropdown = Select(title = "Event type:", value = self.controller.event_type, options=[self.controller.event_type])
+        self.dropdown = Select(value = self.controller.event_type, options=[self.controller.event_type])
         self.dropdown.on_change("value", self.update_type_event)
         
         self.path_display = Div(text="Data acquisition path: <i>None</i>", width=300)
@@ -57,22 +73,62 @@ class EventView:
         self.select_folder_btn.on_click(self.select_folder)
 
         param_layout = row(self.select_folder_btn, self.start_btn, self.stop_btn)
-        file_layout = row(self.path_display, self.folder_display)
+        file_layout = column(self.path_display, self.folder_display)
         
         
-        filter_param_layout = self.setup_filter_param()
-        probe_param_layout = self.setup_probe_param()
-        event_param_layout = self.setup_event_param()
+        self.filter_param_layout = self.setup_filter_param()
+        self.probe_param_layout = self.setup_probe_param()
+        self.event_param_layout = self.setup_event_param()
         add_event_layout = self.setup_create_event()
+        config_layout = self.manage_config_file()
 
-        hidden_param_layout = row(probe_param_layout,  Spacer(width=10), filter_param_layout, Spacer(width=10),  event_param_layout)
-        layout = column(row(column(param_layout, file_layout,  stylesheets = [style], css_classes = ['box-element']), Spacer(width=10),
-                        row(self.dropdown, add_event_layout, spinner_duration, self.spinner_nbr_events,  stylesheets = [style], css_classes = ['box-element'])),
-                        hidden_param_layout, 
+
+        layout = column(row(column(config_layout, column(param_layout, file_layout,  stylesheets = [style], css_classes = ['box-element'])), Spacer(width=10),
+                            column(row(self.dropdown, add_event_layout), row(self.spinner_duration, self.spinner_nbr_events),  stylesheets = [style], css_classes = ['box-element'])),
+                        row(self.probe_param_layout,  Spacer(width=10), self.filter_param_layout, Spacer(width=10),  self.event_param_layout), 
                         )
 
         self.doc.add_root(layout)
         self.doc.title = "Event live plotting"
+
+    def manage_config_file(self):
+        title_label = Div(text = "Configuration")
+        file_input = FileInput(accept=".json")
+        download_button = Button(label="Save config",  stylesheets = [style], css_classes=["toggle-button"])
+
+        json_div = Div(text=json.dumps(self.get_config_param(), indent=2))  # <-- holds the data
+        json_div.visible = False
+
+        def update_params():
+            json_div.text = json.dumps(self.get_config_param(), indent=2)  # Update dynamically
+
+        download_button = Button(label="Download JSON", button_type="success")
+
+        download_button.js_on_click(CustomJS(args=dict(div=json_div), code="""
+            const data = div.text;
+            const blob = new Blob([data], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'data.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        """))
+
+        def file_loaded(attr, old, new):
+                file_contents = base64.b64decode(new)
+                try:
+                    data = json.loads(file_contents)
+                    self.set_config_param(data)
+                except Exception as e:
+                    print("error!" + str(e))
+                    pass
+                
+
+        file_input.on_change("value", file_loaded)
+
+        return column(title_label, row(file_input, download_button, json_div),  stylesheets = [style], css_classes = ['box-element'])
+
 
     def setup_create_event(self):
         self.events_section = column()
@@ -83,7 +139,7 @@ class EventView:
         hidden_section = column(
                             label,
                             self.events_section, 
-                            add_btn
+                            add_btn,  stylesheets = [style], css_classes=["box-element"]
                         )
         def add_event_select():
             ev = []
@@ -115,22 +171,70 @@ class EventView:
 
         toggle_button.on_click(toggle_section)
         
-        return column(toggle_button, hidden_section)
+        return row(toggle_button, hidden_section)
+
+    def get_config_param(self):
+        config = {}
+        config["save path"] = self.controller.selected_folder
+        config["nbr event to record"] = self.spinner_nbr_events.value
+        config["event duration"] = self.spinner_duration.value
+
+        if self.controller.model is not None:
+            config["probe setting"] = {
+                "probe column": self.controller.model.nb_col,
+                "probe row": self.controller.model.nb_line,
+                "display divider column": self.controller.model.col_divider,
+                "display divider row": self.controller.model.row_divider
+
+            }
+            config["filter setting"] = {
+                "low frequency band": self.controller.model.lf, 
+                "high frequency band": self.controller.model.hf 
+            }
+        config["event trigger setting"] = list(self.controller.register_line)
+
+        return config
+
+
+    def set_config_param(self, config):
+        if "save_path" in config: 
+            self.controller.selected_folder = config["save_path"]
+            self.path_display.text = f"Selected folder: {config['save_path']}"
+        
+        if "nbr event to record" in config:
+            self.spinner_nbr_events.value = config["nbr event to record"]
+        
+        if "event duration" in config: 
+            self.spinner_duration.value = config["event duration"]
+
+        if "probe setting" in config: 
+            self.probe_param_layout.children[1].children[0].children[0] = config["probe setting"]["probe column"]
+            self.probe_param_layout.children[1].children[0].children[1] = config["probe setting"]["probe row"]
+            self.probe_param_layout.children[1].children[1].children[0] = config["probe setting"]["display divider column"]
+            self.probe_param_layout.children[1].children[1].children[1] = config["probe setting"]["display divider row"]
+
+        if "filter setting" in config: 
+            self.filter_param_layout.children[1].children[1].children[0] = config["filter setting"]["low frequency band"]
+            self.filter_param_layout.children[1].children[1].children[1] = config["filter setting"]["high frequency band"]
+
+        if "event trigger setting" in config:
+            for i, line in enumerate(config["event trigger setting"]):
+                self.event_param_layout.children[1].children[1].children[i][0].active = bool(config["event trigger setting"][i])
 
     def setup_filter_param(self):
         lowcut_spin = Spinner(title="Low cutoff frequency: ", low=0.5, high=500, step=1, value=1, width=150)
         highcut_spin = Spinner(title="High cutoff frequency: ", low=40, high=4000, step=10, value=200, width=150)
         hidden_section = row(
                     Div(text="Bandpass filter parameters :"),
-                    column(lowcut_spin,  highcut_spin)
+                    column(lowcut_spin,  highcut_spin),  stylesheets = [style], css_classes=["box-element"]
                 )
         
         def update_spinner_lc(attr, old, new):
-            if new < self.highcut_spin.value:
+            if new < highcut_spin.value:
                 self.controller.update_freq(lc=new)
 
         def update_spinner_hc(attr, old, new):
-            if new > self.lowcut_spin.value:
+            if new > lowcut_spin.value:
                 self.controller.update_freq(hc=new)
 
         lowcut_spin.on_change("value", update_spinner_lc)
@@ -154,10 +258,9 @@ class EventView:
         self.load_button = Button(label=f"Load probe view", button_type="primary")
 
         hidden_section = column(
-
                     row(Div(text="Probe   :"), ch_col_spin,  ch_row_spin),
                     row(Div(text="Display :"), dis_col_spin,  dis_row_spin),
-                    self.load_button
+                    self.load_button, stylesheets = [style], css_classes=["box-element"]
                 )
         
         def update_ch_row(attr, old, new):
@@ -236,17 +339,19 @@ class EventView:
 
         hidden_section = column(
                     Div(text="Select event trigger:"),
-                    checkbox_grid
+                    checkbox_grid, stylesheets = [style], css_classes=["box-element"]
                 )
                 
         hidden_section.visible = False  # Start hidden
         return self.setup_hidden_param(hidden_section, "events")
 
     def setup_hidden_param(self, hidden_section, label):
+
         icon_open = TablerIcon(icon_name="toggle-right", size=16)
         icon_close = TablerIcon(icon_name="toggle-left", size=16)
 
-        toggle_button = Button(label="", button_type="primary")
+        toggle_button = Button(label="",  stylesheets = [style], css_classes=["toggle-button"])
+
         toggle_button.label = f"Hide {label} Settings" if hidden_section.visible else f"Show {label} Settings"
         toggle_button.icon = icon_open if hidden_section.visible else icon_close
         def toggle_section():
@@ -256,7 +361,7 @@ class EventView:
 
         toggle_button.on_click(toggle_section)
         
-        return column(toggle_button, hidden_section, stylesheets = [style], css_classes = ['box-element'])
+        return column(toggle_button, hidden_section)
 
 
     def setup_event_view(self):
@@ -350,6 +455,9 @@ class EventView:
         self.doc.add_next_tick_callback(update)
 
     def update_sources(self):
+        if self.sources is None: 
+            return 
+
         x, y = self.controller.get_data_event()
         for i, source in enumerate(self.sources):
             self.doc.add_next_tick_callback(partial(self.update, source, x, y[i]))

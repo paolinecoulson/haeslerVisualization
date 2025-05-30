@@ -12,6 +12,7 @@ class Controller:
         self.selected_folder =  None
         self.is_running = False
         self.event_type = "Average"
+        self.model = None
 
         self.nbr_events = 4
         self.nbr_event_received = 0
@@ -19,11 +20,10 @@ class Controller:
         self.special_events= dict(Average=[])
         self.register_line = np.zeros(32)
         self.register_line[8] = 1
-
+        self.event_duration = 0.1
 
     def set_view_callback(self, view):
         self.view = view 
-
 
     def setup_file_folder(self):
         
@@ -32,7 +32,7 @@ class Controller:
         self.nbr_event_received = 0
         self.special_events= dict(Average=[])
         self.model.data_event = dict()
-
+        
         self.data_folder= datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.data_path = Path(self.selected_folder) / self.data_folder
         self.model.file = self.data_path /r"Record Node 103\experiment1\recording1\continuous\File_Reader-100.NI-DAQmx-100.PXI-6289\continuous.dat"
@@ -42,6 +42,7 @@ class Controller:
 
     def setup_event_view(self, num_channel, nb_col, nb_line, col_divider, line_divider):
         self.model = Model(num_channel, nb_col, nb_line, col_divider, line_divider)
+        self.model.reset_xy(self.event_duration)
 
     def add_event_line(self, line):
         self.register_line[line] = 1
@@ -86,10 +87,12 @@ class Controller:
         self.nbr_events = new
 
     def update_snapshot(self, event_duration):
+        self.event_duration = event_duration
 
-        self.model.reset_xy(event_duration)
-        for value in self.events:
-            self.model.compute_event(self.events[value])
+        if self.model is not None:
+            self.model.reset_xy(event_duration)
+            for value in self.events:
+                self.model.compute_event(self.events[value])
 
         self.view.update_sources()
     
@@ -108,7 +111,7 @@ class Controller:
 
 
     def get_data_event(self):
-
+        
         if self.event_type in self.events:
             return self.model.x, self.model.data_event[self.events[self.event_type]]
         

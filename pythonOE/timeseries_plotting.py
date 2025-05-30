@@ -2,7 +2,7 @@ from bokeh.layouts import column, row
 from bokeh.models import ColumnDataSource, Spinner
 from bokeh.plotting import figure, curdoc
 import numpy as np
-from data_stream import stream
+from data_stream import controller
 
 
 class TimeseriesView:
@@ -16,7 +16,6 @@ class TimeseriesView:
         spinner_line = Spinner(title="Row channel number: ", low=1, high=32, step=1, value=1, width=200)
         self.row = 1
         self.col = 1
-        self.stream = stream
         spinner_column.on_change("value", self.update_column)
         spinner_line.on_change("value", self.update_row)
         curdoc().add_root(column(row(spinner_column, spinner_line), self.plot))
@@ -30,9 +29,9 @@ class TimeseriesView:
         self.row = new 
 
     def update(self):
-        if self.stream.is_running : 
-            self.stream.read_data()
-            x = list(range( self.stream.data.shape[0]))
-            self.source.data = {"x": x, "y": self.stream.data[:, self.row-1, self.col-1]}
+        if controller.is_running: 
+            controller.model.read_data()
+            x = list(range(controller.model.data.shape[0]))
+            self.source.data = {"x": x, "y": controller.model.data[:, self.row-1, self.col-1]}
 
 TimeseriesView()
