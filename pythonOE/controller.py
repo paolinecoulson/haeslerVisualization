@@ -134,5 +134,17 @@ class Controller:
             d = np.stack([self.model.data_event[ts] for ts in all_ts])
             return self.model.x, np.mean(d, axis=0)
 
-                
+    def get_full_data(self, ncol, nrow):
+        if self.model is None: 
+            return False, None, None
+
+        if self.is_running:
+            self.model.read_data(recursive=False)
+        
+        if self.model.data is None:
+            return False, None, None
+        x, y = self.model.get_full_signal(nrow, ncol)
+        return True, x, y
+
+
 

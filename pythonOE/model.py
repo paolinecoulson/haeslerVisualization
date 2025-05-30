@@ -7,7 +7,7 @@ class Model:
 
     def __init__(self, num_channel, nbr_col, nbr_row, col_divider, row_divider):
 
-        self.fs = 1953 #Hz
+        self.fs = 1953.12 #Hz
         self.event_snapshot_duration = 0.1
         self.data_event = dict()
 
@@ -19,16 +19,17 @@ class Model:
 
         self.lc = 1
         self.hc = 200
+        self.data = None
 
     def reset_xy(self, event_duration=100):
         self.event_snapshot_duration = event_duration/1000
         self.snapshot_len = int(self.event_snapshot_duration * self.fs)
         self.x = np.arange(int(self.event_snapshot_duration * self.fs)*2)
-
         y = np.zeros(int(self.event_snapshot_duration * self.fs)*2)
+        self.data = None
         return self.x, y 
 
-    def read_data(self):
+    def read_data(self, recursive=True):
         try: 
             data = np.memmap(self.file, mode="r", dtype="int16")
             samples = data.reshape(
@@ -38,9 +39,11 @@ class Model:
                     )
             )
         except ValueError:
-            time.sleep(1)
-            print("retry reading file.")
-            self.read_data()
+            if recursive:
+                time.sleep(1)
+                print("retry reading file.")
+                
+                self.read_data()
             return
 
         self.data = samples.reshape(-1, self.nbr_row, self.nbr_col)
@@ -61,25 +64,25 @@ class Model:
         channels = self.compute_event(info['sample_number'])
 
     def compute_event(self, event_ts):
-        
-        # Slice the full data snapshot: shape [T, H, W]
-        data_slice = self.data[event_ts - self.snapshot_len:event_ts + self.snapshot_len]  # shape [T, 32, 96]
+
+        data_slice = self.data[event_ts - self.snapshot_len:event_ts + self.snapshot_len]
         data_slice = apply_bandpass_filter(data_slice, self.fs, lowcut=self.lc, highcut=self.hc)
-        # Move to GPU
-        data_gpu = cp.asarray(data_slice)
 
-        # We'll split this into 192 "channels", where each is a 4x4 patch
-        # So reshape to [T, 8, 4, 24, 4] → [192, T, 4, 4]
-        reshaped = data_gpu.reshape((data_gpu.shape[0], int(self.nbr_row/self.row_divider), self.row_divider, int(self.nbr_col/self.col_divider), self.col_divider))
-        reshaped = reshaped.transpose(1, 3, 0, 2, 4).reshape((int(self.num_channel/(self.col_divider*self.row_divider)), data_gpu.shape[0], self.row_divider, self.col_divider))
+        reshaped = data_slice.reshape((data_slice.shape[0], int(self.nbr_row/self.row_divider), self.row_divider, int(self.nbr_col/self.col_divider), self.col_divider))
+        reshaped = reshaped.transpose(1, 3, 0, 2, 4).reshape((int(self.num_channel/(self.col_divider*self.row_divider)), data_slice.shape[0], self.row_divider, self.col_divider))
 
-        # Compute mean over 4x4 (last two axes): → [192, T]
-        meaned = cp.mean(reshaped, axis=(2, 3))
-
-        # Return to CPU as list of arrays
-        self.data_event[event_ts] = meaned.get().tolist()
-
+        meaned = np.mean(reshaped, axis=(2, 3))
+        self.data_event[event_ts] = meaned.tolist()
     
+    def get_full_signal(self, nrow, ncol):
+        data = self.data[:, nrow, ncol]
+        try: 
+            data = apply_bandpass_filter(data, self.fs, lowcut=self.lc, highcut=self.hc)
+        except Exception as error: 
+            print(str(error))
+            pass
+
+        return np.arange(data.shape[0])*self.fs, data
 from scipy.signal import butter, filtfilt
 
 def butter_bandpass(lowcut, highcut, fs, order=4):
@@ -91,7 +94,7 @@ def butter_bandpass(lowcut, highcut, fs, order=4):
 
 def apply_bandpass_filter(data, fs, lowcut=1, highcut=200, order=4):
     b, a = butter_bandpass(lowcut, highcut, fs, order)
-    # Apply filter along the time axis (axis=0)
+
     filtered = filtfilt(b, a, data, axis=0)
     return filtered
 
