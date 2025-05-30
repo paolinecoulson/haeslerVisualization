@@ -21,6 +21,8 @@ class Controller:
         self.register_line = np.zeros(32)
         self.register_line[8] = 1
         self.event_duration = 0.1
+        self.lc = 1
+        self.hc = 200
 
     def set_view_callback(self, view):
         self.view = view 
@@ -40,9 +42,11 @@ class Controller:
 
         return self.selected_folder, self.data_folder
 
-    def setup_event_view(self, num_channel, nb_col, nb_line, col_divider, line_divider):
-        self.model = Model(num_channel, nb_col, nb_line, col_divider, line_divider)
+    def setup_event_view(self, num_channel, nb_col, nb_line, col_divider, row_divider):
+        self.model = Model(num_channel, nb_col, nb_line, col_divider, row_divider)
         self.model.reset_xy(self.event_duration)
+        self.model.lc = self.lc
+        self.model.hc = self.hc
 
     def add_event_line(self, line):
         self.register_line[line] = 1
@@ -99,10 +103,16 @@ class Controller:
     def update_freq(self, lc=None, hc=None):
 
         if lc is not None:
-            self.model.lc = lc
+            self.lc = lc 
         
         if hc is not None:
-            self.model.hc = hc 
+            self.hc = hc 
+
+        if self.model is None: 
+            return
+        
+        self.model.lc = self.lc
+        self.model.hc = self.hc
 
         for value in self.events:
             self.model.compute_event(self.events[value])
@@ -119,7 +129,7 @@ class Controller:
 
             all_ts = self.special_events[self.event_type]
             if len(all_ts) == 0: 
-                return self.model.x, [np.zeros(int(self.model.event_snapshot_duration * self.model.fs)*2)]*int(self.model.num_channel/(self.model.col_divider*self.model.line_divider))
+                return self.model.x, [np.zeros(int(self.model.event_snapshot_duration * self.model.fs)*2)]*int(self.model.num_channel/(self.model.col_divider*self.model.row_divider))
 
             d = np.stack([self.model.data_event[ts] for ts in all_ts])
             return self.model.x, np.mean(d, axis=0)

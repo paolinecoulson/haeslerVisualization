@@ -5,7 +5,7 @@ import time
 
 class Model:
 
-    def __init__(self, num_channel, nbr_col, nbr_line, col_divider, line_divider):
+    def __init__(self, num_channel, nbr_col, nbr_row, col_divider, row_divider):
 
         self.fs = 1953 #Hz
         self.event_snapshot_duration = 0.1
@@ -13,9 +13,9 @@ class Model:
 
         self.num_channel = num_channel
         self.nbr_col=nbr_col
-        self.nbr_line= nbr_line
+        self.nbr_row= nbr_row
         self.col_divider=col_divider
-        self.line_divider= line_divider
+        self.row_divider= row_divider
 
         self.lc = 1
         self.hc = 200
@@ -43,7 +43,7 @@ class Model:
             self.read_data()
             return
 
-        self.data = samples.reshape(-1, self.nbr_line, self.nbr_col)
+        self.data = samples.reshape(-1, self.nbr_row, self.nbr_col)
 
     def get_full_signal(self, channel):
         return self.read_data()[:, channel]
@@ -70,8 +70,8 @@ class Model:
 
         # We'll split this into 192 "channels", where each is a 4x4 patch
         # So reshape to [T, 8, 4, 24, 4] → [192, T, 4, 4]
-        reshaped = data_gpu.reshape((data_gpu.shape[0], int(self.nbr_line/self.line_divider), self.line_divider, int(self.nbr_col/self.col_divider), self.col_divider))
-        reshaped = reshaped.transpose(1, 3, 0, 2, 4).reshape((int(self.num_channel/(self.col_divider*self.line_divider)), data_gpu.shape[0], self.line_divider, self.col_divider))
+        reshaped = data_gpu.reshape((data_gpu.shape[0], int(self.nbr_row/self.row_divider), self.row_divider, int(self.nbr_col/self.col_divider), self.col_divider))
+        reshaped = reshaped.transpose(1, 3, 0, 2, 4).reshape((int(self.num_channel/(self.col_divider*self.row_divider)), data_gpu.shape[0], self.row_divider, self.col_divider))
 
         # Compute mean over 4x4 (last two axes): → [192, T]
         meaned = cp.mean(reshaped, axis=(2, 3))
@@ -94,3 +94,19 @@ def apply_bandpass_filter(data, fs, lowcut=1, highcut=200, order=4):
     # Apply filter along the time axis (axis=0)
     filtered = filtfilt(b, a, data, axis=0)
     return filtered
+
+
+def notch_filter():
+
+    self.data_notch = np.empty(np.shape(self.data))
+    heart_freq, heart_harmonics = 1.9, 10
+    powerline_freq, powerline_harmonics = 72, 1
+    Q=40     
+
+    filtered_signal = self.data_band_pass[mux, ana, :]
+    for i in range(1, heart_harmonics + 1):
+        f0 = heart_freq * i
+        if f0 >= self.sampling_frequency / 2:  # Avoid filtering above Nyquist frequency
+                    reak
+                    b, a = iirnotch(f0, Q, self.sampling_frequency)
+                    filtered_signal = filtfilt(b, a, filtered_signal)
