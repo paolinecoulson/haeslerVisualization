@@ -16,6 +16,7 @@ class Controller:
         self.nbr_events = 4
         self.nbr_event_received = 0
         self.events= dict()
+        self.special_events= dict(Average=[])
         self.register_line = np.zeros(32)
         self.register_line[8] = 1
 
@@ -40,13 +41,7 @@ class Controller:
         return self.selected_folder, self.data_folder
 
     def setup_event_view(self, num_channel, nb_col, nb_line, col_divider, line_divider):
-        if(nb_col % col_divider != 0):
-            return False
-
-        if(nb_line % line_divider != 0):
-            return False   
         self.model = Model(num_channel, nb_col, nb_line, col_divider, line_divider)
-        return True
 
     def add_event_line(self, line):
         self.register_line[line] = 1
@@ -120,6 +115,9 @@ class Controller:
         elif self.event_type in self.special_events:
 
             all_ts = self.special_events[self.event_type]
+            if len(all_ts) == 0: 
+                return self.model.x, [np.zeros(int(self.model.event_snapshot_duration * self.model.fs)*2)]*int(self.model.num_channel/(self.model.col_divider*self.model.line_divider))
+
             d = np.stack([self.model.data_event[ts] for ts in all_ts])
             return self.model.x, np.mean(d, axis=0)
 

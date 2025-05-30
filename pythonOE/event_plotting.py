@@ -1,7 +1,7 @@
 import numpy as np
 from bokeh.layouts import gridplot
 from bokeh.plotting import figure, curdoc, column, row
-from bokeh.models import ColumnDataSource,  Dropdown, Select, Div, Button,  Spinner, Checkbox, InlineStyleSheet, Spacer
+from bokeh.models import ColumnDataSource,  Dropdown, Select, Div, Button,  Spinner, Checkbox, InlineStyleSheet, Spacer, TablerIcon, Span, DataRange1d
 from data_stream import stream, controller
 from bokeh.document import without_document_lock
 import asyncio
@@ -9,7 +9,7 @@ from functools import partial
 from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from tkinter import filedialog
-
+import threading
 
 style = InlineStyleSheet(css="""
         :host(.box-element) {
@@ -28,12 +28,13 @@ class EventView:
         self.controller = controller
         self.controller.set_view_callback(self)
 
-        self.n_channels = 192
+
         self.doc = curdoc()
+        self.grid = None
+        self.container = column()
 
-        spinner_duration = Spinner(title="Event duration (ms): ", low=0, high=100, step=10, value=100, width=150)
+        spinner_duration = Spinner(title="Event duration (ms): ", low=0, high=1000, step=10, value=100, width=150)
         spinner_duration.on_change("value", self.update_snapshot)
-
 
         self.spinner_nbr_events = Spinner(title="Number of events to record : ", low=0, high=10, step=1, value=4, width=160)
         self.spinner_nbr_events.on_change("value", self.update_spinner_nbr_events)
@@ -44,9 +45,10 @@ class EventView:
         self.path_display = Div(text="Data acquisition path: <i>None</i>", width=300)
         self.folder_display = Div(text="Data acquisition folder: <i>None</i>", width=200)
 
-        self.select_folder_btn = Button(label="Select Folder", button_type="primary")
-        self.start_btn = Button(label="Start", button_type="success")
-        self.stop_btn = Button(label="Stop", button_type="danger")
+        self.select_folder_btn = Button(label="Select Folder", icon = TablerIcon(icon_name="folder-search", size=16), button_type="primary")
+        
+        self.start_btn = Button(label="", icon = TablerIcon(icon_name="player-play", size=16), button_type="success")
+        self.stop_btn = Button(label="", icon = TablerIcon(icon_name="player-stop", size=16), button_type="danger")
 
         self.start_btn.on_click(self.start_acquisition)
         self.stop_btn.on_click(self.stop_acquistion)
@@ -80,10 +82,12 @@ class EventView:
                 )
         
         def update_spinner_lc(attr, old, new):
-            self.controller.update_freq(lc=new)
+            if new < self.highcut_spin.value:
+                self.controller.update_freq(lc=new)
 
         def update_spinner_hc(attr, old, new):
-            self.controller.update_freq(hc=new)
+            if new > self.lowcut_spin.value:
+                self.controller.update_freq(hc=new)
 
         lowcut_spin.on_change("value", update_spinner_lc)
         highcut_spin.on_change("value", update_spinner_hc)
@@ -114,25 +118,48 @@ class EventView:
         
         def update_ch_row(attr, old, new):
             self.nrows = new
+            if(self.nrows % self.row_divider != 0):
+                dis_row_spin.value = self.nrows
 
         def update_ch_col(attr, old, new):
             self.ncols = new
+            if(self.ncols % self.col_divider != 0):
+                dis_col_spin.value = self.ncols
 
         def update_dis_col_spin(attr, old, new):
             self.col_divider = new
+            if(self.ncols % self.col_divider != 0):
+                dis_col_spin.value = old
 
         def update_dis_row_spin(attr, old, new):
             self.row_divider = new
+            if(self.nrows % self.row_divider != 0):
+                dis_row_spin.value = old
 
         def create_view_button():
-            validated = self.controller.setup_event_view(self.ncols*self.nrows, self.ncols, self.nrows, self.col_divider, self.row_divider)
-            if not validated: 
-                dis_col_spin.value = ch_col_spin.value
-                dis_row_spin.value = ch_row_spin.value
+            self.controller.setup_event_view(self.ncols*self.nrows, self.ncols, self.nrows, self.col_divider, self.row_divider)
 
-            x, y = self.controller.model.reset_xy(event_duration=100)
-            self.sources = [ColumnDataSource(data=dict(x=x, y=y)) for _ in range(self.n_channels)]
-            self.setup_event_view()
+            self.load_button.icon  = TablerIcon(icon_name="loader", size=16)
+            self.load_button.label = 'Loading graphs - can take long time.'
+            hidden_section.disabled = True 
+
+            if self.grid is not None: 
+                self.grid.destroy()
+                self.container.children.remove(self.grid)
+
+            def load_in_thread():
+                x, y = self.controller.model.reset_xy(event_duration=100)
+                self.sources = [ColumnDataSource(data=dict(x=x, y=y)) for _ in range(int(self.nrows*self.ncols/(self.col_divider*self.row_divider)))]
+                self.setup_event_view()
+
+                def reactivate_button():
+                    self.load_button.icon  =  TablerIcon(icon_name="check", size=16)
+                    self.load_button.label = 'Load probe view'
+                    hidden_section.disabled = False
+                
+                self.doc.add_next_tick_callback(reactivate_button)
+
+            threading.Thread(target = load_in_thread).start()
 
         ch_col_spin.on_change("value", update_ch_col)
         ch_row_spin.on_change("value", update_ch_row)
@@ -172,12 +199,16 @@ class EventView:
         return self.setup_hidden_param(hidden_section, "events")
 
     def setup_hidden_param(self, hidden_section, label):
+        icon_open = TablerIcon(icon_name="toggle-right", size=16)
+        icon_close = TablerIcon(icon_name="toggle-left", size=16)
+
         toggle_button = Button(label="", button_type="primary")
         toggle_button.label = f"Hide {label} Settings" if hidden_section.visible else f"Show {label} Settings"
-
+        toggle_button.icon = icon_open if hidden_section.visible else icon_close
         def toggle_section():
             hidden_section.visible = not hidden_section.visible
             toggle_button.label = f"Hide {label} Settings" if hidden_section.visible else f"Show {label} Settings"
+            toggle_button.icon = icon_open if hidden_section.visible else icon_close
 
         toggle_button.on_click(toggle_section)
         
@@ -186,45 +217,41 @@ class EventView:
 
     def setup_event_view(self):
 
-        self.p1 = figure(
-                height=150,
-                width=150,
-                tools="pan,wheel_zoom,reset",
-                toolbar_location=None,
-                title="C 0-" + str(4-1) + "\nL 0-"+ str(4-1) ,
-                output_backend="webgl",
-            )
 
-        
-        renderer = self.p1.line(x="x", y="y", source=self.sources[0])
-        self.renderers = [renderer]
-        self.p1.xaxis.visible = False
-        self.p1.yaxis.visible = False
+        self.vline = []
+        plots =[]
 
-        self.p1.x_range.start =  self.sources[0].data["x"][0]
-        self.p1.x_range.end = self.sources[0].data["x"][-1]
+        shared_x_range = DataRange1d()
+        nbr_col_display = int(self.ncols/self.col_divider)
+        nbr_row_display = int(self.nrows/self.row_divider)
+        for i in range(0, int(nbr_row_display*nbr_col_display)):
 
-        plots =[self.p1]
-
-        for i in range(1, self.n_channels):
             plot = figure(
                 height=150,
                 width=150,
                 tools="pan,wheel_zoom,reset",
                 toolbar_location=None,
-                title="C " + str((i%24)*4) + "-" + str((i%24+1)*4-1) + "\nL " + str(int(i/24)*4)+"-"+str(int(i/24+1)*4-1) ,
+                title="C " + str((i%nbr_col_display)*self.col_divider) + "-" 
+                        + str((i%nbr_col_display+1)*self.col_divider-1) + "\nR " 
+                        + str(int(i/nbr_col_display)*self.row_divider)+ "-" 
+                        +str(int(i/nbr_col_display+1)*self.row_divider-1) ,
                 output_backend="webgl",
-                x_range=self.p1.x_range
+                x_range=shared_x_range
             )
-            renderer = plot.line(x="x", y="y", source=self.sources[i])
-            self.renderers.append(renderer)
+            plot.line(x="x", y="y", source=self.sources[i])
+            vline = Span(location=self.sources[0].data["x"][-1]/2, dimension='height', line_color='red', line_width=0.5, line_dash='dashed')
+            plot.add_layout(vline)
+            self.vline.append(vline)
             plot.xaxis.visible = False
             plot.yaxis.visible = False
             plots.append(plot)
 
-        grid = gridplot(plots, ncols=24)
-
-        self.doc.add_root(grid)
+        def update_view():
+            self.grid = gridplot(plots, ncols=nbr_col_display)
+            self.container = column(self.grid)
+            self.doc.add_root(self.container)
+        
+        self.doc.add_next_tick_callback(update_view)
 
     def update_snapshot(self, attr, old, new ):
         self.controller.update_snapshot(event_duration=new) 
@@ -279,8 +306,11 @@ class EventView:
             self.doc.add_next_tick_callback(partial(self.update, source, x, y[i]))
     
     def update(self, source, x, y):
+        if len(x) != len(source.data["x"]):
+
+            for vline in self.vline:
+                vline.location = len(x)/2
+
         source.data = {"x": x, "y": y}
-        #self.p1.x_range.start =  x[0]
-        #self.p1.x_range.end = x[-1]
 
 ev = EventView(controller)
