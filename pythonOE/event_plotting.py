@@ -243,44 +243,39 @@ class EventView:
 
         validate_button = Button(label="Apply filters", button_type="primary")
         add_button = Button(label="Add a notch filter", button_type="primary")
+        clear_button = Button(label="Clear notch filters", button_type="primary")
 
-        notch_filter_layout = column(add_button)
+        notch_filter_layout = row()
 
         hidden_section = row(
                     Div(text="Bandpass filter parameters :"),
                     column(lowcut_spin,  highcut_spin, order_spin,validate_button ),
-                    notch_filter_layout, stylesheets = [style], css_classes=["box-element"]
+                    column(row(add_button, clear_button), notch_filter_layout), stylesheets = [style], css_classes=["box-element"]
                 )
 
         def validate_filter():
             notch_filter = []
             for widg in self.notch_filter_widget:
                 notch_filter.append((widg[0].value, widg[1].value))
-
             self.controller.update_freq(lowcut_spin.value, highcut_spin.value, order_spin.value, notch_filter)
             self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
 
         def create_notch_params():
-
             freq_spin = Spinner(title="Notch frequency: ", low=0, high=1000, step=1, value=0, width=150)
             harmonic_spin = Spinner(title="Number of harmonic: ", low=0, high=10, step=1, value=0, width=150)
-
-            remove_button = Button(label="", icon = TablerIcon(icon_name="circle-minus", size=16), button_type="primary")
-            section = column(freq_spin, harmonic_spin)
-
-            wrapper = row(remove_button, section)
-            notch_filter_layout.children.append(wrapper)
+ 
+            notch_filter_layout.children.append(column(freq_spin, harmonic_spin, stylesheets = [style], css_classes=["box-element"]))
             self.notch_filter_widget.append((freq_spin, harmonic_spin))
-
-            def remove_section():
-                self.notch_filter_widget.remove((freq_spin, harmonic_spin))
-                wrapper.destroy()
-                notch_filter_layout.children.remove(wrapper)
-
-            remove_button.on_click(remove_section)
+        
+        def clear_notch():
+            self.notch_filter_widget.clear()
+            for ch in notch_filter_layout.children : 
+                ch.destroy()
+            notch_filter_layout.children = []
 
         validate_button.on_click(validate_filter)
         add_button.on_click(create_notch_params)
+        clear_button.on_click(clear_notch)
 
         def update_spinner_lc(attr, old, new):
             if new > highcut_spin.value:
