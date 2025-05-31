@@ -24,6 +24,7 @@ class Controller:
         self.lc = 1
         self.hc = 200
         self.order = 4
+        self.notch_freq = []
 
     def set_view_callback(self, view):
         self.view = view 
@@ -41,14 +42,14 @@ class Controller:
 
         print(f"Desktop path: {self.model.data_path}")
 
+        self.view.clear_events()
+        self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq)
+
         return self.selected_folder, self.data_folder
 
     def setup_event_view(self, num_channel, nb_col, nb_line, col_divider, row_divider):
         self.model = Model(num_channel, nb_col, nb_line, col_divider, row_divider)
         self.model.reset_xy(self.event_duration)
-        self.model.lc = self.lc
-        self.model.hc = self.hc
-        self.model.order = self.order
 
     def add_event_line(self, line):
         self.register_line[line] = 1
@@ -102,7 +103,7 @@ class Controller:
 
         self.view.update_sources()
     
-    def update_freq(self, lc=None, hc=None, order=None):
+    def update_freq(self, lc=None, hc=None, order=None, notch_freq=None):
         if order is not None:
             self.order = order
 
@@ -111,13 +112,14 @@ class Controller:
         
         if hc is not None:
             self.hc = hc 
+        
+        if notch_freq is not None: 
+            self.notch_freq = notch_freq
 
         if self.model is None: 
             return
-        
-        self.model.lc = self.lc
-        self.model.hc = self.hc
-        self.model.order = self.order
+
+        self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq)
 
         for value in self.events:
             self.model.compute_event(self.events[value])

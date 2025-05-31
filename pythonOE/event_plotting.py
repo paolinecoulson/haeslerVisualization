@@ -76,7 +76,6 @@ class EventView:
         param_layout = row(self.select_folder_btn, self.start_btn, self.stop_btn)
         file_layout = column(self.path_display, self.folder_display)
         
-        
         self.filter_param_layout = self.setup_filter_param()
         self.probe_param_layout = self.setup_probe_param()
         self.event_param_layout = self.setup_event_param()
@@ -182,6 +181,9 @@ class EventView:
                 "high frequency band": self.controller.hc,
                 "order": self.controller.order 
         }
+
+        
+        #config["filter setting"]["notch filter"] = [{"frequency": widg[0].value, "harmonic": widg[1].value} for widg in self.notch_filter_widget]
         
         if self.controller.model is not None:
             config["probe setting"] = {
@@ -220,32 +222,75 @@ class EventView:
             self.filter_param_layout.children[1].children[1].children[0].value = config["filter setting"]["low frequency band"]
             self.filter_param_layout.children[1].children[1].children[1].value = config["filter setting"]["high frequency band"]
 
+            #for i in range(len(config["filter setting"]["notch filter"])):
+            #    self.create_notch_params()
+            #    self.notch_filter_widget[-1][0].value = config["filter setting"]["notch filter"][i]["frequency"]
+            #    self.notch_filter_widget[-1][1].value = config["filter setting"]["notch filter"][i]["harmonic"]
+
         if "event trigger setting" in config:
             for i, line in enumerate(config["event trigger setting"]):
                 self.event_param_layout.children[1].children[1].children[i][0].active = bool(config["event trigger setting"][i])
 
+
+                
+
     def setup_filter_param(self):
+        self.notch_filter_widget = []
+
         lowcut_spin = Spinner(title="Low cutoff frequency: ", low=0.5, high=500, step=1, value=1, width=150)
         highcut_spin = Spinner(title="High cutoff frequency: ", low=40, high=4000, step=10, value=200, width=150)
         order_spin = Spinner(title="Order: ", low=1, high=100, step=1, value=4, width=150)
+
+        validate_button = Button(label="Apply filters", button_type="primary")
+        add_button = Button(label="Add a notch filter", button_type="primary")
+
+        notch_filter_layout = column(add_button)
+
         hidden_section = row(
                     Div(text="Bandpass filter parameters :"),
-                    column(lowcut_spin,  highcut_spin, order_spin),  stylesheets = [style], css_classes=["box-element"]
+                    column(lowcut_spin,  highcut_spin, order_spin,validate_button ),
+                    notch_filter_layout, stylesheets = [style], css_classes=["box-element"]
                 )
-        
-        def update_spinner_order(attr, old, new):
-            self.controller.update_freq(order=new)
+
+        def validate_filter():
+            notch_filter = []
+            for widg in self.notch_filter_widget:
+                notch_filter.append((widg[0].value, widg[1].value))
+
+            self.controller.update_freq(lowcut_spin.value, highcut_spin.value, order_spin.value, notch_filter)
             self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
+
+        def create_notch_params():
+
+            freq_spin = Spinner(title="Notch frequency: ", low=0, high=1000, step=1, value=0, width=150)
+            harmonic_spin = Spinner(title="Number of harmonic: ", low=0, high=10, step=1, value=0, width=150)
+
+            remove_button = Button(label="", icon = TablerIcon(icon_name="circle-minus", size=16), button_type="primary")
+            section = column(freq_spin, harmonic_spin)
+
+            wrapper = row(remove_button, section)
+            notch_filter_layout.children.append(wrapper)
+            self.notch_filter_widget.append((freq_spin, harmonic_spin))
+
+            def remove_section():
+                self.notch_filter_widget.remove((freq_spin, harmonic_spin))
+                wrapper.destroy()
+                notch_filter_layout.children.remove(wrapper)
+
+            remove_button.on_click(remove_section)
+
+        validate_button.on_click(validate_filter)
+        add_button.on_click(create_notch_params)
 
         def update_spinner_lc(attr, old, new):
-            if new < highcut_spin.value:
-                self.controller.update_freq(lc=new)
-            self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
+            if new > highcut_spin.value:
+                lowcut_spin.value = old
+                return
 
         def update_spinner_hc(attr, old, new):
-            if new > lowcut_spin.value:
-                self.controller.update_freq(hc=new)
-            self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
+            if new < lowcut_spin.value:
+                highcut_spin.value = old
+                return
 
         lowcut_spin.on_change("value", update_spinner_lc)
         highcut_spin.on_change("value", update_spinner_hc)
@@ -373,10 +418,7 @@ class EventView:
         
         return column(toggle_button, hidden_section)
 
-
     def setup_event_view(self):
-
-
         self.vline = []
         plots =[]
 
@@ -467,6 +509,10 @@ class EventView:
 
 
         self.doc.add_next_tick_callback(update)
+
+    def clear_events(self):
+        self.dropdown.options = ["Average"]
+        self.events_section.children.clear()
 
     def update_sources(self):
         if self.sources is None: 
