@@ -19,7 +19,7 @@ class Controller:
         self.events= dict()
         self.special_events= dict(Average=[])
         self.register_line = np.zeros(32)
-        self.register_line[8] = 1
+        self.register_line[0] = 1
         self.event_duration = 0.1
         self.lc = 1
         self.hc = 200

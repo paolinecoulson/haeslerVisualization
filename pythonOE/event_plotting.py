@@ -379,7 +379,7 @@ class EventView:
 
 
         for i, cb in enumerate(checkboxes):
-            if i == 8:
+            if i == 0:
                 cb.active = True
                 
             cb.on_change("active", lambda attr, old, new, i=i: checkbox_callback(attr, old, new, i))
