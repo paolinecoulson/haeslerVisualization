@@ -23,22 +23,23 @@ class Controller:
         self.event_duration = 0.1
         self.lc = 1
         self.hc = 200
+        self.order = 4
 
     def set_view_callback(self, view):
         self.view = view 
 
     def setup_file_folder(self):
-        
-        self.data = None
+  
         self.events= dict()
         self.nbr_event_received = 0
         self.special_events= dict(Average=[])
         self.model.data_event = dict()
         
         self.data_folder= datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        self.data_path = Path(self.selected_folder) / self.data_folder
-        self.model.file = self.data_path /r"Record Node 103\experiment1\recording1\continuous\File_Reader-100.NI-DAQmx-100.PXI-6289\continuous.dat"
-        print(f"Desktop path: {self.data_path}")
+        self.model.data_path = Path(self.selected_folder) / self.data_folder
+        self.model.file = None
+
+        print(f"Desktop path: {self.model.data_path}")
 
         return self.selected_folder, self.data_folder
 

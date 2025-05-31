@@ -21,17 +21,24 @@ class Model:
         self.hc = 200
         self.order = 4
         self.data = None
+        self.data_path = None
 
     def reset_xy(self, event_duration=100):
         self.event_snapshot_duration = event_duration/1000
         self.snapshot_len = int(self.event_snapshot_duration * self.fs)
         self.x = np.arange(int(self.event_snapshot_duration * self.fs)*2)
         y = np.zeros(int(self.event_snapshot_duration * self.fs)*2)
-        self.data = None
         return self.x, y 
 
     def read_data(self, recursive=True):
-        try: 
+        if self.data_path is None:
+            return 
+
+            
+        try:
+            if self.file is None:
+                self.file = next(self.data_path.rglob("continuous.*"))
+                
             data = np.memmap(self.file, mode="r", dtype="int16")
             samples = data.reshape(
                     (
