@@ -79,7 +79,7 @@ class Controller:
             self.model.add_event(info)
 
             if self.nbr_events != 0 and self.nbr_event_received >= self.nbr_events:
-                self.view.stop_acquistion_from_thread()
+                self.view.stop_acquisition()
 
             self.view.add_dropdown_options(str(info['sample_number']))
 

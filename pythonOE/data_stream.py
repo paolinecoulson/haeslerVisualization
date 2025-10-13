@@ -5,7 +5,6 @@ import zmq
 import flatbuffers
 import numpy as np
 import threading
-from ContinuousData import *
 import signal 
 
 from open_ephys.control import OpenEphysHTTPServer
@@ -73,13 +72,23 @@ class DataStream(threading.Thread):
         if self.gui.status() != "IDLE":
             self.gui.idle()
 
+        #self.gui.clear_signal_chain()
+        #self.gui.add_processor("NeuroLayer")
+        #self.gui.add_processor("Record Node") 
+        proc = self.gui.get_processors(filter_by_name="Record Node")
+        print(proc)
+        if len(proc) == 0:
+            self.gui.add_processor('Record Node')
+            proc = self.gui.get_processors(filter_by_name="Record Node")
+        
+        
         path, folder = self.controller.setup_file_folder()
-        self.gui.set_record_path(103, str(path))
+        self.gui.set_record_path(proc[0]["id"], str(path))
         self.gui.set_base_text(folder)
         self.gui.record()
         self.controller.is_running = True
 
-    def stop_acquistion(self):
+    def stop_acquisition(self):
         self.gui.idle()
         self.controller.is_running = False
 

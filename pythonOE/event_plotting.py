@@ -1,528 +1,464 @@
-import numpy as np
-from bokeh.layouts import gridplot
-from bokeh.plotting import figure, curdoc, column, row
-from bokeh.models import ColumnDataSource, TextInput, CustomJS, FileInput, Dropdown, Select, Div, Button,  Spinner, Checkbox, InlineStyleSheet, Spacer, TablerIcon, Span, DataRange1d
-from data_stream import stream, controller
-from bokeh.document import without_document_lock
-import asyncio
-from functools import partial
-from concurrent.futures import ThreadPoolExecutor
-import tkinter as tk
-from tkinter import filedialog
-import threading
-import json 
+"""
+Panel + HoloViews port of your Bokeh EventView.
+
+Start with `panel serve event_panel_app.py`.
+"""
+from holoviews.streams import Pipe
+import holoviews as hv
+import json
 import base64
+import threading
+from functools import partial
 
-style = InlineStyleSheet(css = """
-:host(.box-element) {
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  padding: 15px;
-  background-color: #f9f9f9;
-  margin: 2px 2px;
-  position: relative;
-}
+import os
+import numpy as np
+import panel as pn
+import holoviews as hv
 
-.toggle-button {
-  position: absolute;
-  top: -12px;
-  background-color: white;
-  padding: 4px 12px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
-  font-weight: bold;
-  cursor: pointer;
-  user-select: none;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-""")
+# ensure bokeh backend
+hv.extension("plotly")
+pn.extension('plotly')
+pn.extension(nthreads=5)
 
-class EventView:
+pn.extension(sizing_mode="stretch_width")
+
+from data_stream import stream, controller 
+
+
+def dict_to_bytes(d: dict) -> bytes:
+    return json.dumps(d, indent=2).encode("utf-8")
+
+
+class EventViewPanel(pn.viewable.Viewer):
     def __init__(self, controller):
-
-        self.executor = ThreadPoolExecutor()
         self.controller = controller
-        self.controller.set_view_callback(self)
+        self.controller.set_view_callback(self)  # keep same contract
 
-
-        self.doc = curdoc()
-        self.grid = None
-        self.container = column()
-        self.sources = None
-
-        self.spinner_duration = Spinner(title="Event duration (ms): ", low=0, high=1000, step=10, value=100, width=150)
-        self.spinner_duration.on_change("value", self.update_snapshot)
-
-        self.spinner_nbr_events = Spinner(title="Number of events to record : ", low=0, high=10, step=1, value=4, width=160)
-        self.spinner_nbr_events.on_change("value", self.update_spinner_nbr_events)
-
-        self.dropdown = Select(value = self.controller.event_type, options=[self.controller.event_type])
-        self.dropdown.on_change("value", self.update_type_event)
-        
-        self.path_display = Div(text="Data acquisition path: <i>None</i>", width=260)
-        self.folder_display = Div(text="Data acquisition folder: <i>None</i>", width=260)
-
-        self.select_folder_btn = Button(label="Select Folder", icon = TablerIcon(icon_name="folder-search", size=16), button_type="primary")
-        
-        self.start_btn = Button(label="", icon = TablerIcon(icon_name="player-play", size=16), button_type="success")
-        self.stop_btn = Button(label="", icon = TablerIcon(icon_name="player-stop", size=16), button_type="danger")
-
-        self.start_btn.on_click(self.start_acquisition)
-        self.stop_btn.on_click(self.stop_acquistion)
-
-        self.selected_folder = ""
-        self.select_folder_btn.on_click(self.select_folder)
-
-        param_layout = row(self.select_folder_btn, self.start_btn, self.stop_btn)
-        file_layout = column(self.path_display, self.folder_display)
-        
-        self.filter_param_layout = self.setup_filter_param()
-        self.probe_param_layout = self.setup_probe_param()
-        self.event_param_layout = self.setup_event_param()
-        add_event_layout = self.setup_create_event()
-        config_layout = self.manage_config_file()
-
-
-        layout = column(row(config_layout,
-                            column(param_layout, file_layout,  stylesheets = [style], css_classes = ['box-element']),
-                            column(row(self.dropdown, add_event_layout), row(self.spinner_duration, self.spinner_nbr_events),  stylesheets = [style], css_classes = ['box-element'])),
-                        row(self.probe_param_layout, self.filter_param_layout,  self.event_param_layout), 
-                        )
-
-        self.doc.add_root(layout)
-        self.doc.title = "Event live plotting"
-
-    def manage_config_file(self):
-        title_label = Div(text = "Configuration")
-        file_input = FileInput(accept=".json")
-        download_button = Button(label="Save config",  stylesheets = [style], css_classes=["toggle-button"])
-
-        self.json_div = Div(text=json.dumps(self.get_config_param(), indent=2)) 
-        self.json_div.visible = False
-
-        download_button = Button(label="Download config", button_type="primary")
-
-        download_button.js_on_click(CustomJS(args=dict(div=self.json_div), code="""
-            const data = div.text;
-            const blob = new Blob([data], {type: 'application/json'});
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'data.json';
-            a.click();
-            URL.revokeObjectURL(url);
-        """))
-
-        def file_loaded(attr, old, new):
-                file_contents = base64.b64decode(new)
-                try:
-                    data = json.loads(file_contents)
-                    self.set_config_param(data)
-                except Exception as e:
-                    print("error!" + str(e))
-                    pass
-                
-
-        file_input.on_change("value", file_loaded)
-
-        return column(title_label, file_input, download_button, self.json_div,  stylesheets = [style], css_classes = ['box-element'])
-
-
-    def setup_create_event(self):
-        self.events_section = column()
-        self.events_checkbox = []
-
-        add_btn = Button(label="Add new event")
-        label = TextInput(title="Name your new average event: ", placeholder="")
-        hidden_section = column(
-                            label,
-                            self.events_section, 
-                            add_btn,  stylesheets = [style], css_classes=["box-element"]
-                        )
-        def add_event_select():
-            ev = []
-            if label.value == "":
-                return 
-
-            for chb in self.events_section.children: 
-                if chb.active: 
-                    ev.append(int(chb.label))
-            
-            if len(ev) > 0 : 
-                self.controller.special_events[label.value] = ev
-                self.add_dropdown_options(label.value)
-                label.value = ""
-                print(f"Add an event {label.value} that average {str(ev)} events")
-                
-        add_btn.on_click(add_event_select)
-        hidden_section.visible = False  
-
-        icon_open = TablerIcon(icon_name="circle-minus", size=16)
-        icon_close = TablerIcon(icon_name="circle-plus", size=16)
-
-        toggle_button = Button(label="", button_type="primary")
-        toggle_button.icon = icon_open if hidden_section.visible else icon_close
-        
-        def toggle_section():
-            hidden_section.visible = not hidden_section.visible
-            toggle_button.icon = icon_open if hidden_section.visible else icon_close
-
-        toggle_button.on_click(toggle_section)
-        
-        return row(toggle_button, hidden_section)
-
-    def get_config_param(self):
-        config = {}
-        config["save path"] = self.controller.selected_folder
-        config["nbr event to record"] = self.spinner_nbr_events.value
-        config["event duration"] = self.spinner_duration.value
-        config["filter setting"] = {
-                "low frequency band": self.controller.lc, 
-                "high frequency band": self.controller.hc,
-                "order": self.controller.order 
-        }
-
-        
-        #config["filter setting"]["notch filter"] = [{"frequency": widg[0].value, "harmonic": widg[1].value} for widg in self.notch_filter_widget]
-        
-        if self.controller.model is not None:
-            config["probe setting"] = {
-                "probe column": self.controller.model.nbr_col,
-                "probe row": self.controller.model.nbr_row,
-                "display divider column": self.controller.model.col_divider,
-                "display divider row": self.controller.model.row_divider
-
-            }
-
-        config["event trigger setting"] = list(self.controller.register_line)
-
-        return config
-
-
-    def set_config_param(self, config):
-        if "save path" in config: 
-            self.controller.selected_folder = config["save path"]
-            self.path_display.text = f"Selected folder: {config['save path']}"
-        
-        if "nbr event to record" in config:
-            self.spinner_nbr_events.value = config["nbr event to record"]
-        
-        if "event duration" in config: 
-            self.spinner_duration.value = config["event duration"]
-
-        if "probe setting" in config: 
-            self.probe_param_layout.children[1].children[0].children[1].value = config["probe setting"]["probe column"]
-            self.probe_param_layout.children[1].children[0].children[2].value = config["probe setting"]["probe row"]
-            self.probe_param_layout.children[1].children[1].children[1].value = config["probe setting"]["display divider column"]
-            self.probe_param_layout.children[1].children[1].children[2].value = config["probe setting"]["display divider row"]
-
-        if "filter setting" in config: 
-
-            self.filter_param_layout.children[1].children[1].children[2].value = config["filter setting"]["order"]
-            self.filter_param_layout.children[1].children[1].children[0].value = config["filter setting"]["low frequency band"]
-            self.filter_param_layout.children[1].children[1].children[1].value = config["filter setting"]["high frequency band"]
-
-            #for i in range(len(config["filter setting"]["notch filter"])):
-            #    self.create_notch_params()
-            #    self.notch_filter_widget[-1][0].value = config["filter setting"]["notch filter"][i]["frequency"]
-            #    self.notch_filter_widget[-1][1].value = config["filter setting"]["notch filter"][i]["harmonic"]
-
-        if "event trigger setting" in config:
-            for i, line in enumerate(config["event trigger setting"]):
-                self.event_param_layout.children[1].children[1].children[i][0].active = bool(config["event trigger setting"][i])
-
-
-                
-
-    def setup_filter_param(self):
-        self.notch_filter_widget = []
-
-        lowcut_spin = Spinner(title="Low cutoff frequency: ", low=0.5, high=500, step=1, value=1, width=150)
-        highcut_spin = Spinner(title="High cutoff frequency: ", low=40, high=4000, step=10, value=200, width=150)
-        order_spin = Spinner(title="Order: ", low=1, high=100, step=1, value=4, width=150)
-
-        validate_button = Button(label="Apply filters", button_type="primary")
-        add_button = Button(label="Add a notch filter", button_type="primary")
-        clear_button = Button(label="Clear notch filters", button_type="primary")
-
-        notch_filter_layout = row()
-
-        hidden_section = row(
-                    Div(text="Bandpass filter parameters :"),
-                    column(lowcut_spin,  highcut_spin, order_spin,validate_button ),
-                    column(row(add_button, clear_button), notch_filter_layout), stylesheets = [style], css_classes=["box-element"]
-                )
-
-        def validate_filter():
-            notch_filter = []
-            for widg in self.notch_filter_widget:
-                notch_filter.append((widg[0].value, widg[1].value))
-            self.controller.update_freq(lowcut_spin.value, highcut_spin.value, order_spin.value, notch_filter)
-            self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
-
-        def create_notch_params():
-            freq_spin = Spinner(title="Notch frequency: ", low=0, high=1000, step=1, value=0, width=150)
-            harmonic_spin = Spinner(title="Number of harmonic: ", low=0, high=10, step=1, value=0, width=150)
- 
-            notch_filter_layout.children.append(column(freq_spin, harmonic_spin, stylesheets = [style], css_classes=["box-element"]))
-            self.notch_filter_widget.append((freq_spin, harmonic_spin))
-        
-        def clear_notch():
-            self.notch_filter_widget.clear()
-            for ch in notch_filter_layout.children : 
-                ch.destroy()
-            notch_filter_layout.children = []
-
-        validate_button.on_click(validate_filter)
-        add_button.on_click(create_notch_params)
-        clear_button.on_click(clear_notch)
-
-        def update_spinner_lc(attr, old, new):
-            if new > highcut_spin.value:
-                lowcut_spin.value = old
-                return
-
-        def update_spinner_hc(attr, old, new):
-            if new < lowcut_spin.value:
-                highcut_spin.value = old
-                return
-
-        lowcut_spin.on_change("value", update_spinner_lc)
-        highcut_spin.on_change("value", update_spinner_hc)
-                
-        hidden_section.visible = False  
-        return self.setup_hidden_param(hidden_section, "filter")
-
-    def setup_probe_param(self):
+        # Internal state (kept similar to original)
         self.nrows = 32
         self.ncols = 96
         self.row_divider = 4
         self.col_divider = 4
+        self.sources = None      # will hold arrays of (x,y) data
+        self.hv_layout = None    # holoviews Layout of plots
+        self.vline_pos = None    # position for vertical line if needed
 
-        ch_col_spin = Spinner(title="Column: ", low=1, high=100, step=1, value=self.ncols, width=100)
-        ch_row_spin = Spinner(title="Row   : ", low=1, high=100, step=1, value=self.nrows, width=100)
+        # ---------------------------
+        # Widgets
+        # ---------------------------
+        # Spinners / numeric inputs
+        self.spinner_duration = pn.widgets.IntInput(
+            name="Event duration (ms)", value=100, step=10, start=0, end=1000, align="end"
+        )
+        self.spinner_duration.param.watch(self._on_duration_change, "value")
+
+        self.spinner_nbr_events = pn.widgets.IntInput(
+            name="Number of events to record", value=4, step=1, start=0, end=10,  align='end'
+        )
+        self.spinner_nbr_events.param.watch(self._on_nbr_events_change, "value")
+
+        # Event type dropdown
+        self.dropdown = pn.widgets.Select(name="Event type", options=[controller.event_type], value=controller.event_type, align="end")
+        self.dropdown.param.watch(self._on_event_type_change, "value")
+
+        # Path displays
+        self.path_display = pn.widgets.StaticText(name="Data acquisition path", value="None")
+        self.folder_display = pn.widgets.StaticText(name="Data acquisition folder", value="None")
+
+        # Buttons
+        self.select_folder_btn = pn.widgets.Button(name="Select Folder", button_type="primary", align='center')
+        self.start_btn = pn.widgets.Button(name="Start", button_type="success", icon="play",  align='end')
+        self.start_btn.disabled = True
+        self.stop_btn = pn.widgets.Button(name="Stop", button_type="danger", icon="stop", align='end')
+
+        self.select_folder_btn.on_click(self.select_folder)
+        self.select_folder_btn.disabled = True
+
+        self.start_btn.on_click(self.start_acquisition)
+        self.stop_btn.on_click(self.stop_acquisition)
+
+        # Config file widgets
+        self.file_input = pn.widgets.FileInput(accept=".json", align="center", margin=0)
+        self.file_input.param.watch(self._on_config_file_uploaded, "value")
+
+        # FileDownload that uses a callback to get bytes
+        self.download_btn = pn.widgets.FileDownload(callback=self._get_config_bytes, filename="config.json", button_type="primary", align='center')
+
+        # Filter parameters
+        self.lowcut_spin = pn.widgets.FloatInput(name="Low cutoff frequency", value=1, step=1, start=0.5, end=500)
+        self.highcut_spin = pn.widgets.IntInput(name="High cutoff frequency", value=200, step=10, start=40, end=4000)
+        self.order_spin = pn.widgets.IntInput(name="Order", value=4, step=1, start=1, end=100)
+        self.filter_apply_btn = pn.widgets.Button(name="Apply filters", button_type="primary")
+        self.filter_apply_btn.on_click(self._apply_filters)
+
+        # Notch filters dynamic area
+        self.notch_layout = pn.Column()
+        self.add_notch_btn = pn.widgets.Button(name="Add notch filter", button_type="primary")
+        self.clear_notch_btn = pn.widgets.Button(name="Clear notch filters", button_type="danger")
+        self.add_notch_btn.on_click(self._add_notch_filter)
+        self.clear_notch_btn.on_click(self._clear_notch_filters)
+        self.notch_widgets = []  # list of (freq_spinner, harmonic_spinner)
+
+        # Probe parameters
+        self.ch_col_spin = pn.widgets.IntInput(name="Probe Columns", value=self.ncols, step=1, start=1, end=100)
+        self.ch_row_spin = pn.widgets.IntInput(name="Probe Rows", value=self.nrows, step=1, start=1, end=100)
+        self.dis_col_spin = pn.widgets.IntInput(name="Divider column", value=self.col_divider, step=1, start=1, end=100)
+        self.dis_row_spin = pn.widgets.IntInput(name="Divider row", value=self.row_divider, step=1, start=1, end=100)
+        self.load_button = pn.widgets.Button(name="Load probe view", button_type="primary")
+        self.load_button.on_click(self._create_view_button)
+
+        # watchers to keep internal variables in sync
+        self.ch_col_spin.param.watch(self._on_ch_col_change, "value")
+        self.ch_row_spin.param.watch(self._on_ch_row_change, "value")
+        self.dis_col_spin.param.watch(self._on_dis_col_change, "value")
+        self.dis_row_spin.param.watch(self._on_dis_row_change, "value")
+
+        # Events checkboxes grid (32 checkboxes)
+        self.event_checkboxes = [pn.widgets.Checkbox(name=f"Line {i}", value=(i==0)) for i in range(32)]
+        for i, cb in enumerate(self.event_checkboxes):
+            cb.param.watch(partial(self._checkbox_callback, idx=i), "value")
+
+        # Event create / average widget
+        self.event_name_text = pn.widgets.TextInput(name="Name your new average event", placeholder="Event name")
+        self.add_event_btn = pn.widgets.Button(name="Add new event", button_type="primary")
+        self.add_event_btn.on_click(self._add_event_group)
+        self.events_section = pn.Column()  # will hold checkboxes for created event groups
+
+        # For created event groups we still track checkboxes like in original code
+        self.created_event_checkboxes = []  # list of pn.widgets.Checkbox added to events_section
+
+
+        # ---------------------------
+        # Layouts
+        # ---------------------------
+        # Build filter/probe/event panels (hidden toggles can be simulated by revealers)
+        self.filter_panel = pn.Card(
+            pn.Column(
+                pn.pane.Markdown("**Bandpass filter parameters**"),
+                pn.Row(self.lowcut_spin, self.highcut_spin),
+                pn.Row(pn.Spacer(width=100),self.order_spin,pn.Spacer(width=100)),
+                pn.Row(self.add_notch_btn, self.clear_notch_btn),
+                self.notch_layout,
+                self.filter_apply_btn,
+            ),
+            title="Filter",
+            collapsible=True,
+            collapsed=True,
+            sizing_mode="stretch_width",
+        )
+
+        self.probe_panel = pn.Card(
+            pn.Column(
+                pn.Row(pn.pane.Markdown("Probe:"), self.ch_col_spin, self.ch_row_spin),
+                pn.Row(pn.pane.Markdown("Display:"), self.dis_col_spin, self.dis_row_spin),
+                self.load_button,
+            ),
+            title="Probe",
+            collapsible=True,
+            collapsed=False,
+            sizing_mode="stretch_width",
+        )
+
+        self.event_panel = pn.Card(
+            pn.Column(
+                pn.pane.Markdown("Select event trigger:"),
+                pn.GridBox(*self.event_checkboxes, ncols=4, sizing_mode="stretch_width"),
+            ),
+            title="Event Triggers",
+            collapsible=True,
+            collapsed=True,
+            sizing_mode="stretch_width",
+        )
+
+        add_event_panel = pn.Card(self.event_name_text, self.add_event_btn, self.events_section, title="Create new events",  sizing_mode="stretch_width")
+
+        loading_controls =pn.Column(pn.Row(self.select_folder_btn, pn.Column(self.path_display,self.folder_display, align='center')),
+                          pn.Row(pn.widgets.StaticText(name="Configuration", value="", margin=0, align='center'), self.file_input, self.download_btn), 
+                          pn.Row(self.start_btn, self.stop_btn, self.spinner_nbr_events),
+                          sizing_mode="stretch_width")
+
+        self.plot_area = pn.Column(pn.widgets.StaticText(name="", value="No probe view loaded."))
+
+        self.layout = pn.template.FastListTemplate(
+                    sidebar=[self.probe_panel, self.filter_panel, self.event_panel, add_event_panel], 
+                    sidebar_width = 400,
+                    main=[loading_controls, pn.Row(self.dropdown, self.spinner_duration), self.plot_area], 
+                    title = "NeuroLayer real-time visualization")
+
+    def __panel__(self):
+        return self.layout 
+
+    # ---------------------------
+    # Config helpers
+    # ---------------------------
+    def get_config_param(self):
+        cfg = {}
+        cfg["save path"] = getattr(self.controller, "selected_folder", "")
+        cfg["nbr event to record"] = self.spinner_nbr_events.value
+        cfg["event duration"] = self.spinner_duration.value
+        cfg["filter setting"] = {
+            "low frequency band": self.lowcut_spin.value,
+            "high frequency band": self.highcut_spin.value,
+            "order": self.order_spin.value,
+            "notch filter": [{"frequency": w[0].value, "harmonic": w[1].value} for w in self.notch_widgets],
+        }
+        if getattr(self.controller, "model", None) is not None:
+            m = self.controller.model
+            cfg["probe setting"] = {
+                "probe column": m.nbr_col if hasattr(m, "nbr_col") else self.ncols,
+                "probe row": m.nbr_row if hasattr(m, "nbr_row") else self.nrows,
+                "display divider column": m.col_divider if hasattr(m, "col_divider") else self.col_divider,
+                "display divider row": m.row_divider if hasattr(m, "row_divider") else self.row_divider,
+            }
+        cfg["event trigger setting"] = [cb.value for cb in self.event_checkboxes]
+        # special events
+        if hasattr(self.controller, "special_events"):
+            cfg["special_events"] = self.controller.special_events
+        return cfg
+
+    def _get_config_bytes(self):
+        return dict_to_bytes(self.get_config_param())
+
+    def _on_config_file_uploaded(self, event):
+        """FileInput returns a base64-encoded bytes string in event.new"""
+        val = event.new
+        if not val:
+            return
+        try:
+            b = base64.b64decode(val)
+            cfg = json.loads(b)
+            self.set_config_param(cfg)
+        except Exception as e:
+            print("Failed to load config:", e)
+
+    def set_config_param(self, config):
+        # mirror logic from original set_config_param
+        if "save path" in config:
+            self.controller.selected_folder = config["save path"]
+            self.path_display.value = config['save path']
+        if "nbr event to record" in config:
+            self.spinner_nbr_events.value = config["nbr event to record"]
+        if "event duration" in config:
+            self.spinner_duration.value = config["event duration"]
+        if "probe setting" in config:
+            ps = config["probe setting"]
+            # try to set widgets (guard for missing keys)
+            self.ch_col_spin.value = ps.get("probe column", self.ch_col_spin.value)
+            self.ch_row_spin.value = ps.get("probe row", self.ch_row_spin.value)
+            self.dis_col_spin.value = ps.get("display divider column", self.dis_col_spin.value)
+            self.dis_row_spin.value = ps.get("display divider row", self.dis_row_spin.value)
+        if "filter setting" in config:
+            fs = config["filter setting"]
+            self.lowcut_spin.value = fs.get("low frequency band", self.lowcut_spin.value)
+            self.highcut_spin.value = fs.get("high frequency band", self.highcut_spin.value)
+            self.order_spin.value = fs.get("order", self.order_spin.value)
+            # notches
+            if "notch filter" in fs:
+                self._clear_notch_filters()
+                for nf in fs["notch filter"]:
+                    self._add_notch_filter(freq=nf.get("frequency", 0), harmonic=nf.get("harmonic", 0))
+        if "event trigger setting" in config:
+            ets = config["event trigger setting"]
+            for i, val in enumerate(ets):
+                if i < len(self.event_checkboxes):
+                    self.event_checkboxes[i].value = bool(val)
+        if "special_events" in config:
+            # add created events into controller and event UI
+            for name, idxs in config["special_events"].items():
+                self.controller.special_events[name] = idxs
+                self._add_dropdown_option(name)
+    # ---------------------------
+    # Filter / Notch helpers
+    # ---------------------------
+    def _add_notch_filter(self, event=None, freq=0, harmonic=0):
+        freq_spin = pn.widgets.Spinner(name="Notch frequency", value=freq, step=1, start=0, end=1000, width=150)
+        harm_spin = pn.widgets.Spinner(name="Harmonic", value=harmonic, step=1, start=0, end=10, width=150)
+        row = pn.Row(freq_spin, harm_spin, sizing_mode="fixed")
+        self.notch_layout.append(row)
+        self.notch_widgets.append((freq_spin, harm_spin))
+
+    def _clear_notch_filters(self, event=None):
+        self.notch_layout.clear()
+        self.notch_widgets.clear()
+
+    def _apply_filters(self, event=None):
+        notch_filter = [(w[0].value, w[1].value) for w in self.notch_widgets]
+        self.controller.update_freq(self.lowcut_spin.value, self.highcut_spin.value, self.order_spin.value, notch_filter)
+
+    # ---------------------------
+    # Probe / View helpers
+    # ---------------------------
+    def _on_ch_col_change(self, event):
+        self.ncols = event.new
+
+    def _on_ch_row_change(self, event):
+        self.nrows = event.new
+
+    def _on_dis_col_change(self, event):
+        self.col_divider = event.new
+
+    def _on_dis_row_change(self, event):
+        self.row_divider = event.new
         
-        dis_col_spin = Spinner(title="       ", low=1, high=100, step=1, value=self.col_divider, width=100)
-        dis_row_spin = Spinner(title="       ", low=1, high=100, step=1, value=self.row_divider, width=100)
+    def _create_view_button(self, event=None):
+        self.load_button.name = "Loading graphs..."
+        self.load_button.disabled = True
         
-        self.load_button = Button(label=f"Load probe view", button_type="primary")
 
-        hidden_section = column(
-                    row(Div(text="Probe   :"), ch_col_spin,  ch_row_spin),
-                    row(Div(text="Display :"), dis_col_spin,  dis_row_spin),
-                    self.load_button, stylesheets = [style], css_classes=["box-element"]
-                )
-        
-        def update_ch_row(attr, old, new):
-            self.nrows = new
-            if(self.nrows % self.row_divider != 0):
-                dis_row_spin.value = self.nrows
+        nbr_col_display = int(self.ncols / self.col_divider)
+        nbr_row_display = int(self.nrows / self.row_divider)
+        nplots = nbr_col_display * nbr_row_display
 
-        def update_ch_col(attr, old, new):
-            self.ncols = new
-            if(self.ncols % self.col_divider != 0):
-                dis_col_spin.value = self.ncols
+        self.controller.setup_event_view(self.ncols*self.nrows, self.ncols, self.nrows, self.col_divider, self.row_divider)
+        self.select_folder_btn.disabled = False
+        # Pre-allocate empty curves
+        self.pipes = []
+        hv_plots = []
+        x = np.arange(self.spinner_duration.value)  # or whatever length you want
+        y = np.zeros_like(x)
+        self.vline_pos = len(x) / 2
 
-        def update_dis_col_spin(attr, old, new):
-            self.col_divider = new
-            if(self.ncols % self.col_divider != 0):
-                dis_col_spin.value = old
+        def create_plots():
+            for i in range(nplots):
+                # start with zeros (or empty list)
 
-        def update_dis_row_spin(attr, old, new):
-            self.row_divider = new
-            if(self.nrows % self.row_divider != 0):
-                dis_row_spin.value = old
+                pipe = Pipe(data=(x, y))
+                self.pipes.append(pipe)
 
-        def create_view_button():
-            self.controller.setup_event_view(self.ncols*self.nrows, self.ncols, self.nrows, self.col_divider, self.row_divider)
-            self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
-            self.load_button.icon  = TablerIcon(icon_name="loader", size=16)
-            self.load_button.label = 'Loading graphs - can take long time.'
-            hidden_section.disabled = True 
+                dmap = hv.DynamicMap(hv.Curve, streams=[pipe]).opts(
+                                                                    padding=(0, 0),
+                                                                    xaxis='bare',  
+                                                                    yaxis='bare',   
+                                                                    show_grid=False,
+                                                                    show_legend=False,
+                                                                    responsive=False,
+                                                                )
+            
+                hv_plots.append((dmap * hv.VLine(self.vline_pos)).opts(show_legend=False))
 
-            if self.grid is not None: 
-                self.grid.destroy()
-                self.container.children.remove(self.grid)
+            layout = hv.Layout(hv_plots).cols(nbr_col_display)
+            self.hv_layout = pn.pane.HoloViews(layout)
+            self.plot_area.clear()
+            self.plot_area.append(self.hv_layout)
 
-            def load_in_thread():
-                x, y = self.controller.model.reset_xy(event_duration=100)
-                self.sources = [ColumnDataSource(data=dict(x=x, y=y)) for _ in range(int(self.nrows*self.ncols/(self.col_divider*self.row_divider)))]
-                self.setup_event_view()
+            self.load_button.name = "Load probe view"
+            self.load_button.disabled = False
 
-                def reactivate_button():
-                    self.load_button.icon  =  TablerIcon(icon_name="check", size=16)
-                    self.load_button.label = 'Load probe view'
-                    hidden_section.disabled = False
-                
-                self.doc.add_next_tick_callback(reactivate_button)
+            if self.controller.model.data_path:
+                self.start_btn.disabled = False
 
-            threading.Thread(target = load_in_thread).start()
+        thread = threading.Thread(target=create_plots, daemon=True)
+        thread.start()
 
-        ch_col_spin.on_change("value", update_ch_col)
-        ch_row_spin.on_change("value", update_ch_row)
-        dis_col_spin.on_change("value", update_dis_col_spin)
-        dis_row_spin.on_change("value", update_dis_row_spin)
+    # ---------------------------
+    # Event controls
+    # ---------------------------
 
-        self.load_button.on_click(create_view_button)
-                
-        hidden_section.visible = True  
-        return self.setup_hidden_param(hidden_section, "probe")
-
-    def setup_event_param(self):
-        checkboxes = [Checkbox(label=f"Line {i}", active=False, width=60) for i in range(32)]
-        def checkbox_callback(attr, old, new, idx):
-            if new:
-                self.controller.add_event_line(idx)
-            else: 
-                self.controller.remove_event_line(idx)
-            self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
-
-
-        for i, cb in enumerate(checkboxes):
-            if i == 0:
-                cb.active = True
-                
-            cb.on_change("active", lambda attr, old, new, i=i: checkbox_callback(attr, old, new, i))
-
-        rows = [checkboxes[i::4] for i in range(4)]
-        checkbox_grid = gridplot(rows)
-
-        hidden_section = column(
-                    Div(text="Select event trigger:"),
-                    checkbox_grid, stylesheets = [style], css_classes=["box-element"]
-                )
-                
-        hidden_section.visible = False  # Start hidden
-        return self.setup_hidden_param(hidden_section, "events")
-
-    def setup_hidden_param(self, hidden_section, label):
-
-        icon_open = TablerIcon(icon_name="toggle-right", size=16)
-        icon_close = TablerIcon(icon_name="toggle-left", size=16)
-
-        toggle_button = Button(label="",  stylesheets = [style], css_classes=["toggle-button"])
-
-        toggle_button.label = f"Hide {label} Settings" if hidden_section.visible else f"Show {label} Settings"
-        toggle_button.icon = icon_open if hidden_section.visible else icon_close
-        def toggle_section():
-            hidden_section.visible = not hidden_section.visible
-            toggle_button.label = f"Hide {label} Settings" if hidden_section.visible else f"Show {label} Settings"
-            toggle_button.icon = icon_open if hidden_section.visible else icon_close
-
-        toggle_button.on_click(toggle_section)
-        
-        return column(toggle_button, hidden_section)
-
-    def setup_event_view(self):
-        self.vline = []
-        plots =[]
-
-        shared_x_range = DataRange1d()
-        nbr_col_display = int(self.ncols/self.col_divider)
-        nbr_row_display = int(self.nrows/self.row_divider)
-        for i in range(0, int(nbr_row_display*nbr_col_display)):
-
-            plot = figure(
-                height=150,
-                width=150,
-                tools="pan,wheel_zoom,reset",
-                toolbar_location=None,
-                title="C " + str((i%nbr_col_display)*self.col_divider) + "-" 
-                        + str((i%nbr_col_display+1)*self.col_divider-1) + "\nR " 
-                        + str(int(i/nbr_col_display)*self.row_divider)+ "-" 
-                        +str(int(i/nbr_col_display+1)*self.row_divider-1) ,
-                output_backend="webgl",
-                x_range=shared_x_range
-            )
-            plot.line(x="x", y="y", source=self.sources[i])
-            vline = Span(location=self.sources[0].data["x"][-1]/2, dimension='height', line_color='red', line_width=0.5, line_dash='dashed')
-            plot.add_layout(vline)
-            self.vline.append(vline)
-            plot.xaxis.visible = False
-            plot.yaxis.visible = False
-            plots.append(plot)
-
-        def update_view():
-            self.grid = gridplot(plots, ncols=nbr_col_display)
-            self.container = column(self.grid)
-            self.doc.add_root(self.container)
-        
-        self.doc.add_next_tick_callback(update_view)
-
-    def update_snapshot(self, attr, old, new ):
-        self.controller.update_snapshot(event_duration=new) 
-        self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
-
-    def update_spinner_nbr_events(self, attr, old, new):
-        self.controller.update_nbr_events(new)
-        self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
-
-    def select_folder(self):
-        root = tk.Tk()
-        root.attributes('-topmost', True)
-        root.withdraw()
-        folder = tk.filedialog.askdirectory()  
-        if folder:
-            self.controller.selected_folder = folder
-            self.path_display.text = f"Selected folder: {folder}"
-
+    def _checkbox_callback(self, event, idx):
+        # event.new is boolean value
+        if event.new:
+            self.controller.add_event_line(idx)
         else:
-            self.path_display.text = "Selected folder: <i>None</i>"
-        self.json_div.text = json.dumps(self.get_config_param(), indent=2) 
+            self.controller.remove_event_line(idx)
 
-    def start_acquisition(self):
-        
+
+    def _add_event_group(self, event=None):
+        name = self.event_name_text.value.strip()
+        if name == "":
+            return
+        # gather currently active checkboxes
+        selected = [i for i, cb in enumerate(self.event_checkboxes) if cb.value]
+        if not selected:
+            return
+        # register with controller
+        if not hasattr(self.controller, "special_events"):
+            self.controller.special_events = {}
+        self.controller.special_events[name] = selected
+        self._add_dropdown_option(name)
+        # add a checkbox to events_section so user can toggle grouping in UI
+        cb = pn.widgets.Checkbox(name=name, value=False)
+        self.events_section.append(cb)
+        self.created_event_checkboxes.append(cb)
+        self.event_name_text.value = ""
+
+    def _add_dropdown_option(self, name):
+        opts = list(self.dropdown.options) if isinstance(self.dropdown.options, (list, tuple)) else [self.dropdown.options]
+        if name not in opts:
+            opts.append(name)
+            self.dropdown.options = opts
+
+    def clear_events(self):
+        self.dropdown.options = [self.controller.event_type]
+        self.events_section.clear()
+        self.created_event_checkboxes.clear()
+        if hasattr(self.controller, "special_events"):
+            self.controller.special_events.clear()
+
+    # ---------------------------
+    # Start/Stop acquisition
+    # ---------------------------
+    def start_acquisition(self, event=None):
         stream.start_acquisition()
-        self.folder_display.text = f"Data acquisition folder: {self.controller.data_folder}"
-        self.start_btn.disabled = True 
+        # controller should set data_folder attribute
+        self.folder_display.value = getattr(self.controller, 'data_folder', 'None')
+        self.start_btn.disabled = True
         self.select_folder_btn.disabled = True
         self.spinner_nbr_events.disabled = True
         self.load_button.disabled = True
 
-    def stop_acquistion_from_thread(self): 
-        self.doc.add_next_tick_callback(self.stop_acquistion)
 
-    def stop_acquistion(self):
-        stream.stop_acquistion()
-        self.start_btn.disabled = False 
+    def stop_acquisition(self, event=None):
+        stream.stop_acquisition()
+        self.start_btn.disabled = False
         self.select_folder_btn.disabled = False
         self.spinner_nbr_events.disabled = False
         self.load_button.disabled = False
-        
-    def update_type_event(self, attr, old, new):
-        self.controller.event_type = new
+
+    def select_folder(self, event=None):
+        try:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.attributes('-topmost', True)
+            root.withdraw()
+            folder = filedialog.askdirectory()
+            root.destroy()
+        except Exception:
+            folder = None
+
+        if folder:
+
+            self.controller.selected_folder = os.path.normpath(folder)
+            self.path_display.value =  os.path.normpath(folder)
+            self.start_btn.disabled = False
+
+
+    def _on_duration_change(self, event):
+        self.controller.update_snapshot(event.new)
+
+    def _on_nbr_events_change(self, event):
+        self.controller.update_nbr_events(event.new)
+
+    def _on_event_type_change(self, event):
+        self.controller.event_type = event.new
         self.update_sources()
 
-    def add_dropdown_options(self, option):
-
-        def update():
-            if option not in self.dropdown.options:
-                self.dropdown.options = self.dropdown.options + [option]
-                ev = Checkbox(label=f"{option}", active=False, width=60) 
-
-                self.events_section.children.append(ev)
-
-
-        self.doc.add_next_tick_callback(update)
-
-    def clear_events(self):
-        self.dropdown.options = ["Average"]
-        self.events_section.children.clear()
 
     def update_sources(self):
-        if self.sources is None: 
-            return 
+        """Called by controller when new data is available (or by user)."""
+        if self.sources is None:
+            return
 
         x, y = self.controller.get_data_event()
-        for i, source in enumerate(self.sources):
-            self.doc.add_next_tick_callback(partial(self.update, source, x, y[i]))
-    
-    def update(self, source, x, y):
-        if len(x) != len(source.data["x"]):
 
-            for vline in self.vline:
-                vline.location = len(x)/2
+        # update vline pos
+        self.vline_pos = len(x) / 2
 
-        source.data = {"x": x, "y": y}
+        if self.hv_layout is not None:
+            for i, pipe in enumerate(self.pipes):
+                pipe.send((np.array(x), np.array(y[i])))
 
-ev = EventView(controller)
+
+ev = EventViewPanel(controller)
+
+ev.servable()
