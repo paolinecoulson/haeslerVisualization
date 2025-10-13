@@ -30,7 +30,7 @@
 using namespace LfpViewer;
 
 LfpDisplayNode::LfpDisplayNode()
-    : GenericProcessor ("LFP Viewer")
+    : GenericProcessor ("Haesler LFP Viewer")
 {
     for (int displayIndex = 0; displayIndex <= 3; displayIndex++)
     {
@@ -303,7 +303,6 @@ void LfpDisplayNode::process (AudioBuffer<float>& buffer)
         const uint32 nSamples = getNumSamplesInBlock (streamId);
 
         String streamKey = getDataStream (streamId)->getKey();
-
         displayBufferMap[streamId]->addData (buffer, chan, nSamples);
     }
 }

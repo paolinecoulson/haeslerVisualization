@@ -1423,7 +1423,7 @@ void LfpDisplaySplitter::updateScreenBuffer()
 
                         //if (channel < nChans) // we're looping over one 'extra' channel for events above, so make sure not to loop over that one here
                         // {
-                        // this is for fancy drawing -- not used in new LFP Viewer
+                        // this is for fancy drawing -- not used in new 
                         /*int c = 0;
                             for (int j = dbi; j < nextpix && c < MAX_N_SAMP_PER_PIXEL; j++)
                             {

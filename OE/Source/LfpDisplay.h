@@ -221,7 +221,7 @@ public:
 
     /** Holds the channels that are being drawn */
     Array<LfpChannelTrack> drawableChannels;
-
+    std::unordered_set<int> idx_channelToDraw;
     /** Set the viewport's channel focus behavior.
      
         When a single channel is selected, it fills the entire viewport and

@@ -39,7 +39,7 @@ using namespace LfpViewer;
 extern "C" EXPORT void getLibInfo (Plugin::LibraryInfo* info)
 {
     info->apiVersion = PLUGIN_API_VER;
-    info->name = "LFP viewer";
+    info->name = "Haesler LFP viewer";
     info->libVersion = ProjectInfo::versionString;
     info->numPlugins = NUM_PLUGINS;
 }
@@ -50,7 +50,7 @@ extern "C" EXPORT int getPluginInfo (int index, Plugin::PluginInfo* info)
     {
         case 0:
             info->type = Plugin::PROCESSOR;
-            info->processor.name = "LFP Viewer";
+            info->processor.name = "Haesler LFP Viewer";
             info->processor.type = Plugin::Processor::SINK;
             info->processor.creator = &(Plugin::createProcessor<LfpViewer::LfpDisplayNode>);
             break;

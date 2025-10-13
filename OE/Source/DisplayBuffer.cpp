@@ -55,6 +55,7 @@ void DisplayBuffer::prepareToUpdate()
     channelMap.clear();
     numChannels = 0;
 
+    
     isNeeded = false;
 }
 
@@ -98,6 +99,17 @@ void DisplayBuffer::update()
 
     for (int i = 0; i <= numChannels; i++)
         displayBufferIndices.set (i, 0);
+
+    int _displaySkipAmt = 4;
+
+    for (int j = 0; j < numChannels / 32; j = j + _displaySkipAmt)
+    {
+        for (int i = 0; i < 32; i = i + _displaySkipAmt)
+        {
+            LOGD ("insert ", i + 32 * j);
+            idx_channelToDraw.insert (i + 32 * j);
+        }
+    }
 }
 
 void DisplayBuffer::resetIndices()
@@ -227,6 +239,9 @@ void DisplayBuffer::addData (AudioBuffer<float>& buffer, int chan, int nSamples)
 {
     if (displays.size() == 0)
         return;
+    if(idx_channelToDraw.count(chan)==0)
+        return;
+
 
     int previousIndex = displayBufferIndices[channelMap[chan]];
     int channelIndex = channelMap[chan];
@@ -235,12 +250,40 @@ void DisplayBuffer::addData (AudioBuffer<float>& buffer, int chan, int nSamples)
 
     int newIndex;
 
+    juce::AudioBuffer<float> outputBuffer(1, nSamples); // Only one output channel
+    float* out = outputBuffer.getWritePointer(0);
+    juce::FloatVectorOperations::clear(out, nSamples);
+
+    int validCount = 0;
+
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int j = 0; j < 4; ++j)
+        {
+            const int idx = chan + i + j * 32;
+            if (idx >= 0 && idx < numChannels)
+            {
+                const float* in = buffer.getReadPointer(idx);
+                juce::FloatVectorOperations::add(out, in, nSamples); // Vectorized add
+                ++validCount;
+            }
+        }
+    }
+
+    if (validCount > 0)
+    {
+        const float inv = 1.0f / static_cast<float>(validCount);
+        juce::FloatVectorOperations::multiply(out, inv, nSamples); // Vectorized multiply
+    }
+
+
+
     if (nSamples < samplesLeft)
     {
         copyFrom (channelMap[chan], // destChannel
                   displayBufferIndices[channelMap[chan]], // destStartSample
-                  buffer, // source
-                  chan, // source channel
+                  outputBuffer, // source
+                  0, // source channel
                   0, // source start sample
                   nSamples); // numSamples
 
@@ -254,15 +297,15 @@ void DisplayBuffer::addData (AudioBuffer<float>& buffer, int chan, int nSamples)
 
         copyFrom (channelMap[chan], // destChannel
                   displayBufferIndices[channelMap[chan]], // destStartSample
-                  buffer, // source
-                  chan, // source channel
+                  outputBuffer, // source
+                  0, // source channel
                   0, // source start sample
                   samplesLeft); // numSamples
 
         copyFrom (channelMap[chan], // destChannel
                   0, // destStartSample
-                  buffer, // source
-                  chan, // source channel
+                  outputBuffer, // source
+                  0, // source channel
                   samplesLeft, // source start sample
                   extraSamples); // numSamples
 
