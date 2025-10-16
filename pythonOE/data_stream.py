@@ -1,15 +1,8 @@
-from open_ephys.streaming import EventListener
 
-import sys
 import zmq
-import flatbuffers
-import numpy as np
 import threading
-import signal 
-
 from open_ephys.control import OpenEphysHTTPServer
 from controller import Controller
-
 import json 
 
 class DataStream(threading.Thread): 

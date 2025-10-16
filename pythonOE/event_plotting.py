@@ -18,9 +18,7 @@ from timeseries_plotting import TimeseriesView
 
 # ensure bokeh backend
 hv.extension("bokeh", config=dict(no_padding=True))
-
-pn.extension(nthreads=5)
-
+pn.extension(nthreads=100)
 pn.extension(sizing_mode="stretch_width")
 
 
@@ -41,7 +39,6 @@ class EventViewPanel(pn.viewable.Viewer):
         self.ncols = 96
         self.row_divider = 4
         self.col_divider = 4
-        self.sources = None      # will hold arrays of (x,y) data
         self.hv_layout = None    # holoviews Layout of plots
         self.vline_pos = None    # position for vertical line if needed
 
@@ -130,7 +127,7 @@ class EventViewPanel(pn.viewable.Viewer):
         # For created event groups we still track checkboxes like in original code
         self.created_event_checkboxes = []  # list of pn.widgets.Checkbox added to events_section
 
-        ts_widget = TimeseriesView(controller, rolling_window=5000, update_period=50)
+        ts_widget = TimeseriesView(controller)
         # ---------------------------
         # Layouts
         # ---------------------------
@@ -335,29 +332,26 @@ class EventViewPanel(pn.viewable.Viewer):
         nbr_row_display = int(self.nrows / self.row_divider)
         nplots = nbr_col_display * nbr_row_display
 
-        self.controller.setup_event_view(self.ncols*self.nrows, self.ncols, self.nrows, self.col_divider, self.row_divider)
+        x, y = self.controller.setup_event_view(self.ncols*self.nrows, self.ncols, self.nrows, self.col_divider, self.row_divider)
+        
         self.select_folder_btn.disabled = False
         # Pre-allocate empty curves
-        self.pipes = []
+        self.pipes = None
         hv_plots = []
-        x = np.arange(self.spinner_duration.value)  # or whatever length you want
-        y = np.ones_like(x)
-        self.vline_pos = len(x) / 2
 
         def create_plots():
+            self.pipes = Pipe(data=(x,[y]*nbr_row_display*nbr_col_display))
 
             for i in range(nbr_col_display):
                 # start with zeros (or empty list)
-                curves = [hv.VLine(self.vline_pos).opts(line_color='black',
-                                                        line_width=1,
-                                                        line_dash='dashed'   # 👈 dashed line
-                                                    )]
+                curves = [hv.VLine(0).opts(line_color='black', line_width=1, line_dash='dashed')]
+
                 for j in range(nbr_row_display):
+                    def get_curve(data):
+                            x, y = data
+                            return hv.Curve((np.asarray(x), np.asarray(y[i*nbr_row_display + j])))
 
-                    pipe = Pipe(data=(x, y*j))
-                    self.pipes.append(pipe)
-
-                    dmap = hv.DynamicMap(hv.Curve, streams=[pipe]).opts(subcoordinate_y=True,
+                    dmap = hv.DynamicMap(get_curve, streams=[self.pipes]).opts(subcoordinate_y=True,
                                                                         subcoordinate_scale=3.1,
                                                                         height = nbr_row_display * 80,
                                                                         width = 120,
@@ -367,7 +361,10 @@ class EventViewPanel(pn.viewable.Viewer):
                                                                         show_grid=True,
                                                                         show_legend=False,
                                                                         responsive=False,
+                                                                        axiswise=True,  
+                                                                        framewise=True,
                                                                     )
+                    
                     if self.col_divider == 1: 
                         label =  f"C {j*self.row_divider+1}"
                     else : 
@@ -389,7 +386,7 @@ class EventViewPanel(pn.viewable.Viewer):
                               axiswise=True, framewise=True, shared_axes=True,
                               tools=['xwheel_zoom', 'xpan'],  # horizontal zoom & pan only
                               active_tools=['xwheel_zoom'])
-
+                    
                     curves.append(dmap)
                     
 
@@ -506,17 +503,12 @@ class EventViewPanel(pn.viewable.Viewer):
 
     def update_sources(self):
         """Called by controller when new data is available (or by user)."""
-        if self.sources is None:
-            return
 
         x, y = self.controller.get_data_event()
 
-        # update vline pos
-        self.vline_pos = len(x) / 2
-
+        x = np.asarray(x)
         if self.hv_layout is not None:
-            for i, pipe in enumerate(self.pipes):
-                pipe.send((np.array(x), np.array(y[i])))
+            self.pipes.send((x, y))
 
 
 ev = EventViewPanel(controller)

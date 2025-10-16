@@ -7,7 +7,6 @@ class Model:
     def __init__(self, num_channel, nbr_col, nbr_row, col_divider, row_divider):
 
         self.fs = 1953.12 #Hz
-        self.event_snapshot_duration = 0.1
         self.data_event = dict()
 
         self.num_channel = num_channel
@@ -20,11 +19,16 @@ class Model:
         self.data_path = None
 
     def reset_xy(self, event_duration=100):
-        self.event_snapshot_duration = event_duration/1000
-        self.snapshot_len = int(self.event_snapshot_duration * self.fs)
-        self.x = np.arange(int(self.event_snapshot_duration * self.fs)*2)
-        y = np.zeros(int(self.event_snapshot_duration * self.fs)*2)
-        return self.x, y 
+
+        half_snapshot_sec = event_duration / 1000.0
+        self.snapshot_len = int(half_snapshot_sec * self.fs)
+
+        n_samples = 2 * self.snapshot_len
+        self.x = np.linspace(-event_duration, event_duration, n_samples, endpoint=True)
+
+        y = np.ones(n_samples)
+        return self.x, y
+
 
     def read_data(self, recursive=True):
         if self.data_path is None:
@@ -61,7 +65,7 @@ class Model:
         print("event " + str(info['sample_number']))
 
         self.read_data()
-        while(self.data.shape[0] < (info['sample_number']+ int(self.event_snapshot_duration * self.fs))):
+        while(self.data.shape[0] < (info['sample_number']+ int(snapshot_len))):
             self.read_data()
 
         channels = self.compute_event(info['sample_number'])

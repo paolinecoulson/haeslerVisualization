@@ -6,23 +6,24 @@ from bokeh.models import ColumnDataSource, Spinner, Span
 from bokeh.plotting import figure
 import threading
 import time
-from holoviews.streams import Pipe
-
+from holoviews.streams import Buffer
+import pandas as pd
 pn.extension('bokeh')
 hv.extension('bokeh')
 
 class TimeseriesView(pn.viewable.Viewer):
-    def __init__(self, controller, rolling_window=5000, update_period=50, **params):
+    def __init__(self, controller, update_period=500, **params):
         super().__init__(**params)
         self.controller = controller
         self.row = 0
         self.col = 0
-        self.rolling_window = rolling_window
+        
         self.update_period = update_period  # in ms
+        rolling_window = 5000*3
         self.event_drawed = []
         self.ts_x = 0
-
-        self.pipe = Pipe(data=([], []))
+         
+        self.pipe = Buffer(data=pd.DataFrame({'x': [], 'y': []}, columns=['x', 'y']), length=rolling_window*3)
         dmap = hv.DynamicMap(hv.Curve, streams=[self.pipe]).opts(
             framewise=True,  
             axiswise=True,  
@@ -78,10 +79,13 @@ class TimeseriesView(pn.viewable.Viewer):
     # ------------------------------------------------
     def update(self):
         valid, x_data, y_data = self.controller.get_full_data(self.row, self.col)
+
         if not valid:
             return
+        
 
-        self.pipe.send({'x': x_data, 'y': y_data})
+        self.pipe.send(pd.DataFrame({'x': x_data[self.ts_x:], 'y': y_data[self.ts_x:]}, columns=['x', 'y']))
+        self.ts_x =len(x_data)
 
         for ts in self.controller.events.values():
             if ts not in self.event_drawed:
