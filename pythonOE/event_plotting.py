@@ -13,14 +13,16 @@ from functools import partial
 import os
 import numpy as np
 import panel as pn
-import holoviews as hv
+from timeseries_plotting import TimeseriesView
+
 
 # ensure bokeh backend
-hv.extension("plotly")
-pn.extension('plotly')
+hv.extension("bokeh", config=dict(no_padding=True))
+
 pn.extension(nthreads=5)
 
 pn.extension(sizing_mode="stretch_width")
+
 
 from data_stream import stream, controller 
 
@@ -66,7 +68,7 @@ class EventViewPanel(pn.viewable.Viewer):
         self.folder_display = pn.widgets.StaticText(name="Data acquisition folder", value="None")
 
         # Buttons
-        self.select_folder_btn = pn.widgets.Button(name="Select Folder", button_type="primary", align='center')
+        self.select_folder_btn = pn.widgets.Button(name="Select Folder", button_type="primary", align='center', width=150)
         self.start_btn = pn.widgets.Button(name="Start", button_type="success", icon="play",  align='end')
         self.start_btn.disabled = True
         self.stop_btn = pn.widgets.Button(name="Stop", button_type="danger", icon="stop", align='end')
@@ -82,7 +84,8 @@ class EventViewPanel(pn.viewable.Viewer):
         self.file_input.param.watch(self._on_config_file_uploaded, "value")
 
         # FileDownload that uses a callback to get bytes
-        self.download_btn = pn.widgets.FileDownload(callback=self._get_config_bytes, filename="config.json", button_type="primary", align='center')
+        self.download_btn = pn.widgets.FileDownload(callback=self._get_config_bytes, filename="config.json",
+                                                    button_type="primary", align='center', width=150)
 
         # Filter parameters
         self.lowcut_spin = pn.widgets.FloatInput(name="Low cutoff frequency", value=1, step=1, start=0.5, end=500)
@@ -104,7 +107,7 @@ class EventViewPanel(pn.viewable.Viewer):
         self.ch_row_spin = pn.widgets.IntInput(name="Probe Rows", value=self.nrows, step=1, start=1, end=100)
         self.dis_col_spin = pn.widgets.IntInput(name="Divider column", value=self.col_divider, step=1, start=1, end=100)
         self.dis_row_spin = pn.widgets.IntInput(name="Divider row", value=self.row_divider, step=1, start=1, end=100)
-        self.load_button = pn.widgets.Button(name="Load probe view", button_type="primary")
+        self.load_button = pn.widgets.Button(name="Load probe view", button_type="primary", width=150, align="center")
         self.load_button.on_click(self._create_view_button)
 
         # watchers to keep internal variables in sync
@@ -127,7 +130,7 @@ class EventViewPanel(pn.viewable.Viewer):
         # For created event groups we still track checkboxes like in original code
         self.created_event_checkboxes = []  # list of pn.widgets.Checkbox added to events_section
 
-
+        ts_widget = TimeseriesView(controller, rolling_window=5000, update_period=50)
         # ---------------------------
         # Layouts
         # ---------------------------
@@ -145,6 +148,7 @@ class EventViewPanel(pn.viewable.Viewer):
             collapsible=True,
             collapsed=True,
             sizing_mode="stretch_width",
+            margin=(10, 10, 10, 10),  # (top, right, bottom, left)
         )
 
         self.probe_panel = pn.Card(
@@ -157,6 +161,7 @@ class EventViewPanel(pn.viewable.Viewer):
             collapsible=True,
             collapsed=False,
             sizing_mode="stretch_width",
+            margin=(20, 0, 20, 0),  # (top, right, bottom, left)
         )
 
         self.event_panel = pn.Card(
@@ -164,25 +169,46 @@ class EventViewPanel(pn.viewable.Viewer):
                 pn.pane.Markdown("Select event trigger:"),
                 pn.GridBox(*self.event_checkboxes, ncols=4, sizing_mode="stretch_width"),
             ),
-            title="Event Triggers",
+            title="TTL event triggers",
             collapsible=True,
             collapsed=True,
             sizing_mode="stretch_width",
+             margin=(10, 10, 10, 10),  # (top, right, bottom, left)
         )
 
-        add_event_panel = pn.Card(self.event_name_text, self.add_event_btn, self.events_section, title="Create new events",  sizing_mode="stretch_width")
+        acquisition_folder = pn.Card(
+            pn.Column(self.select_folder_btn, self.path_display,self.folder_display),
+            title="Acquisition folder",
+            sizing_mode="stretch_width",
+             margin=(20, 0, 20, 0),  # (top, right, bottom, left)
 
-        loading_controls =pn.Column(pn.Row(self.select_folder_btn, pn.Column(self.path_display,self.folder_display, align='center')),
-                          pn.Row(pn.widgets.StaticText(name="Configuration", value="", margin=0, align='center'), self.file_input, self.download_btn), 
-                          pn.Row(self.start_btn, self.stop_btn, self.spinner_nbr_events),
-                          sizing_mode="stretch_width")
+        )
 
-        self.plot_area = pn.Column(pn.widgets.StaticText(name="", value="No probe view loaded."))
+        config_panel = pn.Card(
+            pn.Column(self.file_input, self.download_btn),
+            title="Configuration",
+            sizing_mode="stretch_width",
+             margin=(20, 0, 20, 0),  # (top, right, bottom, left)
+
+        )
+
+        add_event_panel = pn.Card(self.event_name_text, self.add_event_btn, self.events_section, 
+                                    collapsed=True,
+                                    title="Create new events",  
+                                    sizing_mode="stretch_width", margin=(10, 10, 10, 10))
+
+        loading_controls = pn.Row(self.start_btn, self.stop_btn, self.spinner_nbr_events,sizing_mode="stretch_width")
+
+        self.plot_area = pn.Column(pn.widgets.StaticText(name="", value="No probe view loaded."), sizing_mode="stretch_both")
 
         self.layout = pn.template.FastListTemplate(
-                    sidebar=[self.probe_panel, self.filter_panel, self.event_panel, add_event_panel], 
+                    sidebar=[config_panel, self.probe_panel, acquisition_folder, ts_widget], 
                     sidebar_width = 400,
-                    main=[loading_controls, pn.Row(self.dropdown, self.spinner_duration), self.plot_area], 
+                    main=[loading_controls,  
+                          pn.Row(self.filter_panel, self.event_panel, add_event_panel),
+                          pn.Row(self.dropdown, self.spinner_duration), 
+                          self.plot_area
+                          ], 
                     title = "NeuroLayer real-time visualization")
 
     def __panel__(self):
@@ -271,9 +297,9 @@ class EventViewPanel(pn.viewable.Viewer):
     # Filter / Notch helpers
     # ---------------------------
     def _add_notch_filter(self, event=None, freq=0, harmonic=0):
-        freq_spin = pn.widgets.Spinner(name="Notch frequency", value=freq, step=1, start=0, end=1000, width=150)
-        harm_spin = pn.widgets.Spinner(name="Harmonic", value=harmonic, step=1, start=0, end=10, width=150)
-        row = pn.Row(freq_spin, harm_spin, sizing_mode="fixed")
+        freq_spin = pn.widgets.Spinner(name="Notch frequency", value=freq, step=1, start=0, end=1000)
+        harm_spin = pn.widgets.Spinner(name="Harmonic", value=harmonic, step=1, start=0, end=10)
+        row = pn.Row(freq_spin, harm_spin, sizing_mode="stretch_width")
         self.notch_layout.append(row)
         self.notch_widgets.append((freq_spin, harm_spin))
 
@@ -315,29 +341,65 @@ class EventViewPanel(pn.viewable.Viewer):
         self.pipes = []
         hv_plots = []
         x = np.arange(self.spinner_duration.value)  # or whatever length you want
-        y = np.zeros_like(x)
+        y = np.ones_like(x)
         self.vline_pos = len(x) / 2
 
         def create_plots():
-            for i in range(nplots):
+
+            for i in range(nbr_col_display):
                 # start with zeros (or empty list)
+                curves = [hv.VLine(self.vline_pos).opts(line_color='black',
+                                                        line_width=1,
+                                                        line_dash='dashed'   # 👈 dashed line
+                                                    )]
+                for j in range(nbr_row_display):
 
-                pipe = Pipe(data=(x, y))
-                self.pipes.append(pipe)
+                    pipe = Pipe(data=(x, y*j))
+                    self.pipes.append(pipe)
 
-                dmap = hv.DynamicMap(hv.Curve, streams=[pipe]).opts(
-                                                                    padding=(0, 0),
-                                                                    xaxis='bare',  
-                                                                    yaxis='bare',   
-                                                                    show_grid=False,
-                                                                    show_legend=False,
-                                                                    responsive=False,
-                                                                )
-            
-                hv_plots.append((dmap * hv.VLine(self.vline_pos)).opts(show_legend=False))
+                    dmap = hv.DynamicMap(hv.Curve, streams=[pipe]).opts(subcoordinate_y=True,
+                                                                        subcoordinate_scale=3.1,
+                                                                        height = nbr_row_display * 80,
+                                                                        width = 120,
+                                                                        color = "grey",
+                                                                        padding=(0, 0),
+                                                                        yaxis=None,   
+                                                                        show_grid=True,
+                                                                        show_legend=False,
+                                                                        responsive=False,
+                                                                    )
+                    if self.col_divider == 1: 
+                        label =  f"C {j*self.row_divider+1}"
+                    else : 
+                        label =  f"C {j*self.row_divider+1}-{(j+1)*self.row_divider}"
+                    
+                    dmap = dmap.relabel(f"R {j*self.row_divider+1}-{(j+1)*self.row_divider}")
+                    
+
+                    
+                    if i == 0: 
+                        dmap.opts(yaxis='left', width = 220) 
+                        
+                    if self.col_divider == 1: 
+                        label =  f"C {i*self.col_divider+1}"
+                    else : 
+                        label =  f"C {i*self.col_divider+1}-{(i+1)*self.col_divider}"
+
+                    dmap.opts(xlabel = label, 
+                              axiswise=True, framewise=True, shared_axes=True,
+                              tools=['xwheel_zoom', 'xpan'],  # horizontal zoom & pan only
+                              active_tools=['xwheel_zoom'])
+
+                    curves.append(dmap)
+                    
+
+                overlay = hv.Overlay(curves).collate()
+                
+                hv_plots.append(overlay)
 
             layout = hv.Layout(hv_plots).cols(nbr_col_display)
-            self.hv_layout = pn.pane.HoloViews(layout)
+            self.hv_layout = pn.pane.HoloViews(layout, center=True)
+            
             self.plot_area.clear()
             self.plot_area.append(self.hv_layout)
 
@@ -370,9 +432,7 @@ class EventViewPanel(pn.viewable.Viewer):
         selected = [i for i, cb in enumerate(self.event_checkboxes) if cb.value]
         if not selected:
             return
-        # register with controller
-        if not hasattr(self.controller, "special_events"):
-            self.controller.special_events = {}
+
         self.controller.special_events[name] = selected
         self._add_dropdown_option(name)
         # add a checkbox to events_section so user can toggle grouping in UI

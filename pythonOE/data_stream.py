@@ -72,11 +72,7 @@ class DataStream(threading.Thread):
         if self.gui.status() != "IDLE":
             self.gui.idle()
 
-        #self.gui.clear_signal_chain()
-        #self.gui.add_processor("NeuroLayer")
-        #self.gui.add_processor("Record Node") 
         proc = self.gui.get_processors(filter_by_name="Record Node")
-        print(proc)
         if len(proc) == 0:
             self.gui.add_processor('Record Node')
             proc = self.gui.get_processors(filter_by_name="Record Node")
