@@ -349,7 +349,7 @@ class EventViewPanel(pn.viewable.Viewer):
                 for j in range(nbr_row_display):
                     def get_curve(data, nbr_row_display=nbr_row_display, i=i, j=j):
                             x, y = data
-                            return hv.Curve((x, y[i*nbr_row_display + j, :].T))
+                            return hv.Curve((x, y[i*nbr_row_display + j, :]))
 
                     dmap = hv.DynamicMap(get_curve, streams=[self.pipes]).opts(subcoordinate_y=True,
                                                                         subcoordinate_scale=0.1,

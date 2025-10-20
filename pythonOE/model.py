@@ -83,7 +83,7 @@ class Model:
         reshaped = reshaped.transpose(1, 3, 0, 2, 4).reshape((int(self.num_channel/(self.col_divider*self.row_divider)), data.shape[0], self.row_divider, self.col_divider))
 
         meaned = np.mean(reshaped, axis=(2, 3))
-        meaned = (meaned) / (meaned.std(axis=1, keepdims=True))
+        meaned = meaned / (meaned.std(axis=1, keepdims=True))
         self.data_event[event_ts] = meaned
     
     def get_full_signal(self, nrow, ncol):

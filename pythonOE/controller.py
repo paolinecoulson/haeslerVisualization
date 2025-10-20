@@ -3,6 +3,8 @@ from datetime import datetime
 from pathlib import Path
 import threading
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor
+
 
 class Controller: 
 
@@ -25,6 +27,8 @@ class Controller:
         self.hc = 200
         self.order = 4
         self.notch_freq = []
+
+        self.executor = ThreadPoolExecutor(max_workers=1)
 
     def set_view_callback(self, view):
         self.view = view 
@@ -67,8 +71,7 @@ class Controller:
 
         if self.nbr_events != 0 and self.nbr_event_received > self.nbr_events:
             return 
-
-
+            
         print("Event occurred on TTL line " 
                 + str(info['line']) 
                 + " at " 
@@ -88,7 +91,8 @@ class Controller:
 
             self.view.update_sources()
 
-        threading.Thread(target=add_event_in_thread).start()
+        self.executor.submit(add_event_in_thread)
+
 
     def update_nbr_events(self, new):
         self.nbr_events = new
@@ -96,12 +100,14 @@ class Controller:
     def update_snapshot(self, event_duration):
         self.event_duration = event_duration
 
-        if self.model is not None:
-            self.model.reset_xy(event_duration)
-            for value in self.events:
-                self.model.compute_event(self.events[value])
+        def update_():
+            if self.model is not None:
+                self.model.reset_xy(event_duration)
+                for value in self.events:
+                    self.model.compute_event(self.events[value])
 
-        self.view.update_sources()
+            self.view.update_sources()
+        self.executor.submit(update_)
     
     def update_freq(self, lc=None, hc=None, order=None, notch_freq=None):
         if order is not None:
@@ -116,15 +122,19 @@ class Controller:
         if notch_freq is not None: 
             self.notch_freq = notch_freq
 
-        if self.model is None: 
-            return
+        def update_():
+            if self.model is None: 
+                return
 
-        self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq)
+            self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq)
 
-        for value in self.events:
-            self.model.compute_event(self.events[value])
+            for value in self.events:
+                self.model.compute_event(self.events[value])
+            
 
-        self.view.update_sources()
+            self.view.update_sources()
+        
+        self.executor.submit(update_)
 
 
     def get_data_event(self):
