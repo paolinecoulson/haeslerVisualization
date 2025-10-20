@@ -81,7 +81,7 @@ class Controller:
             if self.nbr_events != 0 and self.nbr_event_received >= self.nbr_events:
                 self.view.stop_acquisition()
 
-            self.view.add_dropdown_options(str(info['sample_number']))
+            self.view.add_dropdown_option(str(info['sample_number']))
 
             self.events[str(info['sample_number'])] = info['sample_number']
             self.special_events["Average"].append(info['sample_number'])
@@ -135,12 +135,18 @@ class Controller:
         elif self.event_type in self.special_events:
 
             all_ts = self.special_events[self.event_type]
+            
             if len(all_ts) != 0: 
-                d = np.stack([self.model.data_event[ts] for ts in all_ts])
-                return self.model.x, np.mean(d, axis=0)
+                d = []
+                for ts in all_ts: 
+                    d.append(self.model.data_event[ts])
+
+                d = np.stack(d)
+                d = np.mean(d, axis=0)
+                return self.model.x, d
         
         x, y = self.model.reset_xy(self.event_duration)
-        return x, [y]*self.model.num_channel*int(self.model.num_channel/(self.model.col_divider*self.model.row_divider))
+        return x, y
 
 
     def get_full_data(self, ncol, nrow):

@@ -27,6 +27,7 @@ class Model:
         self.x = np.linspace(-event_duration, event_duration, n_samples, endpoint=True)
 
         y = np.ones(n_samples)
+        y = np.tile(y, (int(self.nbr_col/self.col_divider)*int(self.nbr_row/self.row_divider), 1))
         return self.x, y
 
 
@@ -45,10 +46,10 @@ class Model:
                         self.num_channel,
                     )
             )
-        except ValueError:
+        except ValueError as error:
             if recursive:
                 time.sleep(1)
-                print("retry reading file.")
+                print("retry reading file. " + str(error))
                 
                 self.read_data()
             return
@@ -65,7 +66,7 @@ class Model:
         print("event " + str(info['sample_number']))
 
         self.read_data()
-        while(self.data.shape[0] < (info['sample_number']+ int(snapshot_len))):
+        while(self.data.shape[0] < (info['sample_number']+ int(self.snapshot_len))):
             self.read_data()
 
         channels = self.compute_event(info['sample_number'])
@@ -82,7 +83,8 @@ class Model:
         reshaped = reshaped.transpose(1, 3, 0, 2, 4).reshape((int(self.num_channel/(self.col_divider*self.row_divider)), data.shape[0], self.row_divider, self.col_divider))
 
         meaned = np.mean(reshaped, axis=(2, 3))
-        self.data_event[event_ts] = meaned.tolist()
+        meaned = (meaned) / (meaned.std(axis=1, keepdims=True))
+        self.data_event[event_ts] = meaned
     
     def get_full_signal(self, nrow, ncol):
         data = self.data[:, nrow, ncol]

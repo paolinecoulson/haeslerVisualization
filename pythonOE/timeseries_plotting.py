@@ -92,7 +92,7 @@ class TimeseriesView(pn.viewable.Viewer):
                 self.event_drawed.append(ts)
                 vloc = ts * self.controller.model.fs
 
-                span = Span(location=vloc, dimension='height', line_color='red', line_width=0.5, line_dash='dashed')
-                self._panel[1].object = self.plot*span
+                #span = Span(location=vloc, dimension='height', line_color='red', line_width=0.5, line_dash='dashed')
+                #self._panel[1].object = self.plot*span
 
 

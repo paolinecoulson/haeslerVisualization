@@ -289,7 +289,7 @@ class EventViewPanel(pn.viewable.Viewer):
             # add created events into controller and event UI
             for name, idxs in config["special_events"].items():
                 self.controller.special_events[name] = idxs
-                self._add_dropdown_option(name)
+                self.add_dropdown_option(name)
     # ---------------------------
     # Filter / Notch helpers
     # ---------------------------
@@ -326,7 +326,7 @@ class EventViewPanel(pn.viewable.Viewer):
     def _create_view_button(self, event=None):
         self.load_button.name = "Loading graphs..."
         self.load_button.disabled = True
-        
+        self.start_btn.disabled = True
 
         nbr_col_display = int(self.ncols / self.col_divider)
         nbr_row_display = int(self.nrows / self.row_divider)
@@ -340,29 +340,26 @@ class EventViewPanel(pn.viewable.Viewer):
         hv_plots = []
 
         def create_plots():
-            self.pipes = Pipe(data=(x,[y]*nbr_row_display*nbr_col_display))
+            self.pipes = Pipe(data=(np.asarray(x),np.asarray(y)))
 
             for i in range(nbr_col_display):
                 # start with zeros (or empty list)
-                curves = [hv.VLine(0).opts(line_color='black', line_width=1, line_dash='dashed')]
+                curves = [hv.VLine(0).opts(line_color='black', line_width=1, line_dash='dashed',  tools=[], active_tools=[])]
 
                 for j in range(nbr_row_display):
-                    def get_curve(data):
+                    def get_curve(data, nbr_row_display=nbr_row_display, i=i, j=j):
                             x, y = data
-                            return hv.Curve((np.asarray(x), np.asarray(y[i*nbr_row_display + j])))
+                            return hv.Curve((x, y[i*nbr_row_display + j, :].T))
 
                     dmap = hv.DynamicMap(get_curve, streams=[self.pipes]).opts(subcoordinate_y=True,
-                                                                        subcoordinate_scale=3.1,
-                                                                        height = nbr_row_display * 80,
+                                                                        subcoordinate_scale=0.1,
                                                                         width = 120,
-                                                                        color = "grey",
-                                                                        padding=(0, 0),
                                                                         yaxis=None,   
                                                                         show_grid=True,
                                                                         show_legend=False,
                                                                         responsive=False,
-                                                                        axiswise=True,  
-                                                                        framewise=True,
+                                                                         tools=[], active_tools=[],
+                                                                        
                                                                     )
                     
                     if self.col_divider == 1: 
@@ -383,15 +380,15 @@ class EventViewPanel(pn.viewable.Viewer):
                         label =  f"C {i*self.col_divider+1}-{(i+1)*self.col_divider}"
 
                     dmap.opts(xlabel = label, 
-                              axiswise=True, framewise=True, shared_axes=True,
-                              tools=['xwheel_zoom', 'xpan'],  # horizontal zoom & pan only
-                              active_tools=['xwheel_zoom'])
+                              axiswise=True, framewise=True,
+                              tools=[], active_tools=[]
+                              )
                     
                     curves.append(dmap)
                     
 
                 overlay = hv.Overlay(curves).collate()
-                
+                overlay.opts(tools=['xwheel_zoom','ywheel_zoom', 'xpan'], xlim=(-100,100), active_tools=['xwheel_zoom'])
                 hv_plots.append(overlay)
 
             layout = hv.Layout(hv_plots).cols(nbr_col_display)
@@ -431,14 +428,14 @@ class EventViewPanel(pn.viewable.Viewer):
             return
 
         self.controller.special_events[name] = selected
-        self._add_dropdown_option(name)
+        self.add_dropdown_option(name)
         # add a checkbox to events_section so user can toggle grouping in UI
         cb = pn.widgets.Checkbox(name=name, value=False)
         self.events_section.append(cb)
         self.created_event_checkboxes.append(cb)
         self.event_name_text.value = ""
 
-    def _add_dropdown_option(self, name):
+    def add_dropdown_option(self, name):
         opts = list(self.dropdown.options) if isinstance(self.dropdown.options, (list, tuple)) else [self.dropdown.options]
         if name not in opts:
             opts.append(name)
@@ -450,6 +447,7 @@ class EventViewPanel(pn.viewable.Viewer):
         self.created_event_checkboxes.clear()
         if hasattr(self.controller, "special_events"):
             self.controller.special_events.clear()
+            self.controller.special_events = dict(Average=[])
 
     # ---------------------------
     # Start/Stop acquisition
@@ -505,10 +503,9 @@ class EventViewPanel(pn.viewable.Viewer):
         """Called by controller when new data is available (or by user)."""
 
         x, y = self.controller.get_data_event()
-
         x = np.asarray(x)
         if self.hv_layout is not None:
-            self.pipes.send((x, y))
+            self.pipes.send((x, np.asarray(y)))
 
 
 ev = EventViewPanel(controller)

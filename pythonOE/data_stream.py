@@ -65,12 +65,16 @@ class DataStream(threading.Thread):
         if self.gui.status() != "IDLE":
             self.gui.idle()
 
+        proc = self.gui.get_processors(filter_by_name="Event Broadcaster")
+        if len(proc) == 0:
+            self.gui.add_processor("Event Broadcaster")
+
         proc = self.gui.get_processors(filter_by_name="Record Node")
         if len(proc) == 0:
             self.gui.add_processor('Record Node')
             proc = self.gui.get_processors(filter_by_name="Record Node")
         
-        
+
         path, folder = self.controller.setup_file_folder()
         self.gui.set_record_path(proc[0]["id"], str(path))
         self.gui.set_base_text(folder)
