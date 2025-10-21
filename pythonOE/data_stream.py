@@ -26,8 +26,6 @@ class DataStream(threading.Thread):
 
         print("Initialized EventListener at " + self.url)
 
-        
-
     def run(self):
         """
         Starts the listening process, with separate callbacks
@@ -91,5 +89,3 @@ class DataStream(threading.Thread):
         self.socket.close()
         self.context.term()
 
-controller = Controller()
-stream = DataStream(controller)

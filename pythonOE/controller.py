@@ -4,6 +4,8 @@ from pathlib import Path
 import threading
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
+import signal 
+
 
 
 class Controller: 
@@ -13,7 +15,7 @@ class Controller:
         
         self.selected_folder =  None
         self.is_running = False
-        self.event_type = "Average"
+        self.event_type = ""
         self.model = None
 
         self.nbr_events = 4
@@ -29,6 +31,9 @@ class Controller:
         self.notch_freq = []
 
         self.executor = ThreadPoolExecutor(max_workers=1)
+
+    def close(self):
+        self.executor.shutdown(wait=False)
 
     def set_view_callback(self, view):
         self.view = view 
@@ -71,17 +76,17 @@ class Controller:
 
         if self.nbr_events != 0 and self.nbr_event_received > self.nbr_events:
             return 
-            
+
         print("Event occurred on TTL line " 
                 + str(info['line']) 
                 + " at " 
                 + str(info['sample_number'] / info['sample_rate']) 
                 + " seconds.")
 
-        def add_event_in_thread():
+        def add_event_in_thread(nbr_event_received):
             self.model.add_event(info)
 
-            if self.nbr_events != 0 and self.nbr_event_received >= self.nbr_events:
+            if self.nbr_events != 0 and nbr_event_received >= self.nbr_events:
                 self.view.stop_acquisition()
 
             self.view.add_dropdown_option(str(info['sample_number']))
@@ -90,8 +95,9 @@ class Controller:
             self.special_events["Average"].append(info['sample_number'])
 
             self.view.update_sources()
+            print("finished computed event"+ str(info['sample_number']))
 
-        self.executor.submit(add_event_in_thread)
+        self.executor.submit(add_event_in_thread, self.nbr_event_received)
 
 
     def update_nbr_events(self, new):
@@ -148,6 +154,7 @@ class Controller:
             
             if len(all_ts) != 0: 
                 d = []
+                print(all_ts)
                 for ts in all_ts: 
                     d.append(self.model.data_event[ts])
 
@@ -162,13 +169,7 @@ class Controller:
     def get_full_data(self, ncol, nrow):
         if self.model is None: 
             return False, None, None
-
-        if self.is_running:
-            self.model.read_data(recursive=False)
-        
-        if self.model.data is None:
-            return False, None, None
-        x, y = self.model.get_full_signal(nrow, ncol)
+        x, y = self.model.get_full_signal( nrow, ncol)
         return True, x, y
 
 

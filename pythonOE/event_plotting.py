@@ -14,15 +14,14 @@ import os
 import numpy as np
 import panel as pn
 from timeseries_plotting import TimeseriesView
-
+from controller import Controller
+from data_stream import DataStream
+import signal 
+import sys 
 
 # ensure bokeh backend
-hv.extension("bokeh", config=dict(no_padding=True))
-pn.extension(nthreads=100)
-pn.extension(sizing_mode="stretch_width")
-
-
-from data_stream import stream, controller 
+hv.extension("bokeh")
+pn.extension(defer_load=True, nthreads=100, sizing_mode="stretch_width")
 
 
 def dict_to_bytes(d: dict) -> bytes:
@@ -57,7 +56,7 @@ class EventViewPanel(pn.viewable.Viewer):
         self.spinner_nbr_events.param.watch(self._on_nbr_events_change, "value")
 
         # Event type dropdown
-        self.dropdown = pn.widgets.Select(name="Event type", options=[controller.event_type], value=controller.event_type, align="end")
+        self.dropdown = pn.widgets.Select(name="Event type", options=[controller.event_type, "Average"], value=controller.event_type, align="end")
         self.dropdown.param.watch(self._on_event_type_change, "value")
 
         # Path displays
@@ -125,9 +124,9 @@ class EventViewPanel(pn.viewable.Viewer):
         self.events_section = pn.Column()  # will hold checkboxes for created event groups
 
         # For created event groups we still track checkboxes like in original code
-        self.created_event_checkboxes = []  # list of pn.widgets.Checkbox added to events_section
 
-        ts_widget = TimeseriesView(controller)
+
+        self.ts_widget = TimeseriesView(controller)
         # ---------------------------
         # Layouts
         # ---------------------------
@@ -189,7 +188,7 @@ class EventViewPanel(pn.viewable.Viewer):
 
         )
 
-        add_event_panel = pn.Card(self.event_name_text, self.add_event_btn, self.events_section, 
+        add_event_panel = pn.Card(self.event_name_text, self.events_section, self.add_event_btn, 
                                     collapsed=True,
                                     title="Create new events",  
                                     sizing_mode="stretch_width", margin=(10, 10, 10, 10))
@@ -199,7 +198,7 @@ class EventViewPanel(pn.viewable.Viewer):
         self.plot_area = pn.Column(pn.widgets.StaticText(name="", value="No probe view loaded."), sizing_mode="stretch_both")
 
         self.layout = pn.template.FastListTemplate(
-                    sidebar=[config_panel, self.probe_panel, acquisition_folder, ts_widget], 
+                    sidebar=[config_panel, self.probe_panel, acquisition_folder, self.ts_widget], # 
                     sidebar_width = 400,
                     main=[loading_controls,  
                           pn.Row(self.filter_panel, self.event_panel, add_event_panel),
@@ -323,92 +322,6 @@ class EventViewPanel(pn.viewable.Viewer):
     def _on_dis_row_change(self, event):
         self.row_divider = event.new
         
-    def _create_view_button(self, event=None):
-        self.load_button.name = "Loading graphs..."
-        self.load_button.disabled = True
-        self.start_btn.disabled = True
-
-        nbr_col_display = int(self.ncols / self.col_divider)
-        nbr_row_display = int(self.nrows / self.row_divider)
-        nplots = nbr_col_display * nbr_row_display
-
-        x, y = self.controller.setup_event_view(self.ncols*self.nrows, self.ncols, self.nrows, self.col_divider, self.row_divider)
-        
-        self.select_folder_btn.disabled = False
-        # Pre-allocate empty curves
-        self.pipes = None
-        hv_plots = []
-
-        def create_plots():
-            self.pipes = Pipe(data=(np.asarray(x),np.asarray(y)))
-
-            for i in range(nbr_col_display):
-                # start with zeros (or empty list)
-                curves = [hv.VLine(0).opts(line_color='black', line_width=1, line_dash='dashed',  tools=[], active_tools=[])]
-
-                for j in range(nbr_row_display):
-                    def get_curve(data, nbr_row_display=nbr_row_display, i=i, j=j):
-                            x, y = data
-                            return hv.Curve((x, y[i*nbr_row_display + j, :]))
-
-                    dmap = hv.DynamicMap(get_curve, streams=[self.pipes]).opts(subcoordinate_y=True,
-                                                                        subcoordinate_scale=0.1,
-                                                                        width = 120,
-                                                                        yaxis=None,   
-                                                                        show_grid=True,
-                                                                        show_legend=False,
-                                                                        responsive=False,
-                                                                         tools=[], active_tools=[],
-                                                                        
-                                                                    )
-                    
-                    if self.col_divider == 1: 
-                        label =  f"C {j*self.row_divider+1}"
-                    else : 
-                        label =  f"C {j*self.row_divider+1}-{(j+1)*self.row_divider}"
-                    
-                    dmap = dmap.relabel(f"R {j*self.row_divider+1}-{(j+1)*self.row_divider}")
-                    
-
-                    
-                    if i == 0: 
-                        dmap.opts(yaxis='left', width = 220) 
-                        
-                    if self.col_divider == 1: 
-                        label =  f"C {i*self.col_divider+1}"
-                    else : 
-                        label =  f"C {i*self.col_divider+1}-{(i+1)*self.col_divider}"
-
-                    dmap.opts(xlabel = label, 
-                              axiswise=True, framewise=True,
-                              tools=[], active_tools=[]
-                              )
-                    
-                    curves.append(dmap)
-                    
-
-                overlay = hv.Overlay(curves).collate()
-                overlay.opts(tools=['xwheel_zoom','ywheel_zoom', 'xpan'], xlim=(-100,100), active_tools=['xwheel_zoom'])
-                hv_plots.append(overlay)
-
-            layout = hv.Layout(hv_plots).cols(nbr_col_display)
-            self.hv_layout = pn.pane.HoloViews(layout, center=True)
-            
-            self.plot_area.clear()
-            self.plot_area.append(self.hv_layout)
-
-            self.load_button.name = "Load probe view"
-            self.load_button.disabled = False
-
-            if self.controller.model.data_path:
-                self.start_btn.disabled = False
-
-        thread = threading.Thread(target=create_plots, daemon=True)
-        thread.start()
-
-    # ---------------------------
-    # Event controls
-    # ---------------------------
 
     def _checkbox_callback(self, event, idx):
         # event.new is boolean value
@@ -423,47 +336,51 @@ class EventViewPanel(pn.viewable.Viewer):
         if name == "":
             return
         # gather currently active checkboxes
-        selected = [i for i, cb in enumerate(self.event_checkboxes) if cb.value]
+        selected = [cb.label for cb in self.event_checkboxes if cb.value]
         if not selected:
             return
-
+        print(selected)
         self.controller.special_events[name] = selected
         self.add_dropdown_option(name)
-        # add a checkbox to events_section so user can toggle grouping in UI
-        cb = pn.widgets.Checkbox(name=name, value=False)
-        self.events_section.append(cb)
-        self.created_event_checkboxes.append(cb)
         self.event_name_text.value = ""
 
     def add_dropdown_option(self, name):
         opts = list(self.dropdown.options) if isinstance(self.dropdown.options, (list, tuple)) else [self.dropdown.options]
         if name not in opts:
-            opts.append(name)
+            if opts[0] == "":
+                opts[0] = name
+                self.controller.event_type = name
+            else:
+                opts.append(name)
             self.dropdown.options = opts
+            # add a checkbox to events_section so user can toggle grouping in UI
+            cb = pn.widgets.Checkbox(name=name, value=False)
+            self.events_section.append(cb)
 
     def clear_events(self):
-        self.dropdown.options = [self.controller.event_type]
+        self.dropdown.options = ["", "Average"]
         self.events_section.clear()
-        self.created_event_checkboxes.clear()
         if hasattr(self.controller, "special_events"):
             self.controller.special_events.clear()
             self.controller.special_events = dict(Average=[])
 
-    # ---------------------------
-    # Start/Stop acquisition
-    # ---------------------------
+
     def start_acquisition(self, event=None):
         stream.start_acquisition()
+        self.controller.model.start_stream()
         # controller should set data_folder attribute
         self.folder_display.value = getattr(self.controller, 'data_folder', 'None')
         self.start_btn.disabled = True
         self.select_folder_btn.disabled = True
         self.spinner_nbr_events.disabled = True
         self.load_button.disabled = True
+        self.ts_widget.start_streaming()
 
 
     def stop_acquisition(self, event=None):
         stream.stop_acquisition()
+        self.controller.model.stop_stream()
+        self.ts_widget.stop_streaming()
         self.start_btn.disabled = False
         self.select_folder_btn.disabled = False
         self.spinner_nbr_events.disabled = False
@@ -482,11 +399,9 @@ class EventViewPanel(pn.viewable.Viewer):
             folder = None
 
         if folder:
-
             self.controller.selected_folder = os.path.normpath(folder)
             self.path_display.value =  os.path.normpath(folder)
             self.start_btn.disabled = False
-
 
     def _on_duration_change(self, event):
         self.controller.update_snapshot(event.new)
@@ -498,16 +413,108 @@ class EventViewPanel(pn.viewable.Viewer):
         self.controller.event_type = event.new
         self.update_sources()
 
+    def _create_view_button(self, event=None):
+        self.load_button.name = "Loading graphs..."
+        self.load_button.disabled = True
+        self.start_btn.disabled = True
+
+        nbr_col_display = int(self.ncols / self.col_divider)
+        nbr_row_display = int(self.nrows / self.row_divider)
+        nplots = nbr_col_display * nbr_row_display
+
+        x, y = self.controller.setup_event_view(self.ncols*self.nrows, self.ncols, self.nrows, self.col_divider, self.row_divider)
+        
+        self.select_folder_btn.disabled = False
+        # Pre-allocate empty curves
+        self.pipes = None
+        self.hv_plots = []
+
+        def create_plots():
+            self.pipes = Pipe(data=(np.asarray(x),np.asarray(y)))
+
+            for i in range(nbr_col_display):
+                # start with zeros (or empty list)
+                curves = [hv.VLine(0).opts(line_color='black', line_width=1, line_dash='dashed',  tools=[], active_tools=[])]
+
+                for j in range(nbr_row_display):
+                    def get_curve(data, nbr_row_display=nbr_row_display, i=i, j=j):
+                            x, y = data
+                            return  hv.Curve((x, y[i*nbr_row_display + j, :]))
+
+                    dmap = hv.DynamicMap(get_curve, streams=[self.pipes]).opts(subcoordinate_y=True,
+                                                                        subcoordinate_scale=1,
+                                                                        width = 120,
+                                                                        yaxis=None,   
+                                                                        show_grid=True,
+                                                                        show_legend=False,
+                                                                        responsive=False,
+                                                                        tools=[], active_tools=[],
+                                                                        
+                                                                    )
+                    
+                    if self.col_divider == 1: 
+                        label =  f"C {j*self.row_divider+1}"
+                    else : 
+                        label =  f"C {j*self.row_divider+1}-{(j+1)*self.row_divider}"
+                    
+                    dmap = dmap.relabel(f"R {j*self.row_divider+1}-{(j+1)*self.row_divider}")
+                    
+                    if i == 0: 
+                        dmap.opts(yaxis='left', width = 220) 
+                        
+                    if self.col_divider == 1: 
+                        label =  f"C {i*self.col_divider+1}"
+                    else : 
+                        label =  f"C {i*self.col_divider+1}-{(i+1)*self.col_divider}"
+
+                    dmap.opts(xlabel = label, 
+                              axiswise=False, framewise=True,
+                              tools=[], active_tools=[]
+                              
+                              )
+
+                    curves.append(dmap)
+                    
+
+                overlay = hv.Overlay(curves).collate()
+                overlay.opts(tools=['xwheel_zoom','ywheel_zoom', 'xpan'], active_tools=['ywheel_zoom'])
+             
+                self.hv_plots.append(overlay)
+
+            layout = hv.Layout(self.hv_plots).cols(nbr_col_display)
+            
+            self.hv_layout = pn.pane.HoloViews(layout, center=True)
+            
+            self.plot_area.clear()
+            self.plot_area.append(self.hv_layout)
+
+            self.load_button.name = "Load probe view"
+            self.load_button.disabled = False
+
+            if self.controller.model.data_path:
+                self.start_btn.disabled = False
+
+        thread = threading.Thread(target=create_plots, daemon=True)
+        thread.start()
 
     def update_sources(self):
         """Called by controller when new data is available (or by user)."""
-
         x, y = self.controller.get_data_event()
         x = np.asarray(x)
         if self.hv_layout is not None:
             self.pipes.send((x, np.asarray(y)))
 
+            
 
+controller = Controller()
+stream = DataStream(controller)
 ev = EventViewPanel(controller)
+
+def handle_sigint(sig, frame):
+    controller.close()
+    stream.stop()
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, handle_sigint)
 
 ev.servable()
