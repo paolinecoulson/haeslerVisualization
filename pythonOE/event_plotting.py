@@ -126,7 +126,7 @@ class EventViewPanel(pn.viewable.Viewer):
         # For created event groups we still track checkboxes like in original code
 
 
-        self.ts_widget = TimeseriesView(controller)
+        self.ts_widget = TimeseriesView(controller, self.ncols, self.nrows)
         # ---------------------------
         # Layouts
         # ---------------------------
@@ -312,9 +312,11 @@ class EventViewPanel(pn.viewable.Viewer):
     # ---------------------------
     def _on_ch_col_change(self, event):
         self.ncols = event.new
+        self.ts_widget.update_grid(self.ncols, self.nrows)
 
     def _on_ch_row_change(self, event):
         self.nrows = event.new
+        self.ts_widget.update_grid(self.ncols, self.nrows)
 
     def _on_dis_col_change(self, event):
         self.col_divider = event.new
@@ -336,7 +338,7 @@ class EventViewPanel(pn.viewable.Viewer):
         if name == "":
             return
         # gather currently active checkboxes
-        selected = [cb.label for cb in self.event_checkboxes if cb.value]
+        selected = [cb.name for cb in self.event_checkboxes if cb.value]
         if not selected:
             return
         print(selected)
@@ -350,6 +352,7 @@ class EventViewPanel(pn.viewable.Viewer):
             if opts[0] == "":
                 opts[0] = name
                 self.controller.event_type = name
+                self.update_sources()
             else:
                 opts.append(name)
             self.dropdown.options = opts
@@ -439,7 +442,7 @@ class EventViewPanel(pn.viewable.Viewer):
                 for j in range(nbr_row_display):
                     def get_curve(data, nbr_row_display=nbr_row_display, i=i, j=j):
                             x, y = data
-                            return  hv.Curve((x, y[i*nbr_row_display + j, :]))
+                            return hv.Curve((x, y[i*nbr_row_display + j, :]))
 
                     dmap = hv.DynamicMap(get_curve, streams=[self.pipes]).opts(subcoordinate_y=True,
                                                                         subcoordinate_scale=1,

@@ -2,89 +2,133 @@ import numpy as np
 import panel as pn
 import holoviews as hv
 import panel as pn
-from bokeh.models import ColumnDataSource, Spinner, Span
-from bokeh.plotting import figure
-import threading
+from bokeh.models import Spinner
 import time
-from holoviews.streams import Buffer
-import pandas as pd
+from holoviews.streams import Pipe
 pn.extension('bokeh')
 hv.extension('bokeh')
 
 class TimeseriesView(pn.viewable.Viewer):
-    def __init__(self, controller, update_period=2000, **params):
+    def __init__(self, controller, nbr_col, nbr_row, update_period=1000,**params):
         super().__init__(**params)
         self.controller = controller
-        self.row = 0
-        self.col = 0
+        self.sub_curves= []
         self.periodic_callback= None
         self.update_period = update_period  # in ms
         rolling_window = 5000*3
         self.event_drawed = []
-        self.ts_x = 0
-         
-        self.pipe = Buffer(data=pd.DataFrame({'x': [], 'y': []}, columns=['x', 'y']), length=rolling_window*3)
 
-        def overlay_with_events(x, y):
-            elements = [hv.Curve((x, y))]
+        self.nbr_col = nbr_col
+        self.nbr_row = nbr_row
+
+        self.pipe = Pipe(data=(np.zeros((0,0)), np.zeros((0,1,1))))
+
+        def overlay_with_events(data):
+            elements = []
+            x,y = data
+
+            for i, sub in enumerate(self.sub_curves):
+                row = sub['spinner_row'].value
+                col = sub['spinner_col'].value
+                y_sub = y[:, row, col]
+
+                elements.append(hv.Curve((x, y_sub), label=f"Sub {i} ({row},{col})").opts(axiswise=False, framewise=True))
+                                
+
+            # Event markers
             for ts in self.controller.events.values():
                 vloc = ts * self.controller.model.fs
                 elements.append(hv.VLine(vloc).opts(line_color='red', line_width=1, line_dash='dashed'))
-            return hv.Overlay(elements)
 
 
-        dmap = hv.DynamicMap(hv.Curve, streams=[self.pipe]).opts(
-            framewise=True,  
-            axiswise=True,  
-            tools=['xwheel_zoom', 'xpan'],
-            active_tools=['xwheel_zoom'],
-            show_grid=True
+            ov = hv.Overlay(elements).opts( subcoordinate_y=True, subcoordinate_scale=0.1,                    
+                                            yaxis='left',
+                                            show_grid=True,
+                                            responsive=False,
+                                            show_legend=True,
+                                            tools=['xwheel_zoom','ywheel_zoom', 'xpan'], 
+                                            active_tools=['ywheel_zoom'] )
+            return ov
+        
+        self.add_sub_button = pn.widgets.Button(name="+ Add Sub-Signal", button_type="primary")
+        self.add_sub_button.on_click(self.add_sub_curve)
+
+        self.controls = pn.Column(
+            self.add_sub_button,
+            sizing_mode="stretch_width"
         )
+        self.add_sub_curve()
+
+        dmap = hv.DynamicMap(
+                lambda data: overlay_with_events(data),
+                streams=[self.pipe]  # buffer triggers the redraw
+            )
 
         self.plot = dmap
+        self._panel = pn.Column(self.controls, pn.pane.HoloViews(self.plot, sizing_mode="stretch_width"))
 
-        # --- Widgets ---
-        self.spinner_column = pn.widgets.Spinner(
-            name="Column channel number",
-            start=0, end=1000, step=1, value=self.col
+    def update_grid(self,  nbr_col,  nbr_row):
+        self.nbr_row = nbr_row
+        self.nbr_col = nbr_col 
+
+    def add_sub_curve(self, event=None):
+        # Row/col spinners
+        spinner_row = pn.widgets.Spinner(
+            name="Sub Row", start=0, end=1000, step=1, value=0
         )
-        self.spinner_row = pn.widgets.Spinner(
-            name="Row channel number",
-            start=0, end=1000, step=1, value=self.row
+        spinner_col = pn.widgets.Spinner(
+            name="Sub Column", start=0, end=1000, step=1, value=0
         )
+        remove_btn = pn.widgets.Button(name="Remove", button_type="danger")
+        spinner_col.param.watch(self.update_column, "value")
+        spinner_row.param.watch(self.update_row, "value")
 
-        self.spinner_column.param.watch(self.update_column, "value")
-        self.spinner_row.param.watch(self.update_row, "value")
+        c = pn.Row(spinner_row, spinner_col, remove_btn)
 
-        # --- Layout ---
-        controls = pn.Row(self.spinner_column, self.spinner_row, sizing_mode="stretch_width")
-        self._panel = pn.Column(controls, pn.pane.HoloViews(self.plot, sizing_mode="stretch_width"))
+        # Remove callback
+        def remove_callback(ev):
+            self.controls.remove(c)
+            self.sub_curves[:] = [s for s in self.sub_curves if s['spinner_row'] != spinner_row]
+            self.update()
 
+        remove_btn.on_click(remove_callback)
+
+        # Store sub-curve
+        self.sub_curves.append({
+            'spinner_row': spinner_row,
+            'spinner_col': spinner_col,
+            'remove_btn': remove_btn
+        })
+
+        self.controls.append(c)
+        self.update()
 
     def __panel__(self):
         return self._panel
 
     def update_column(self, event):
         new = event.new
-        if self.controller.is_running and new > self.controller.model.ncol:
+        if new > self.nbr_col:
             self.spinner_column.value = event.old
             return
-        self.col = new
+
+        self.update()
 
     def update_row(self, event):
         new = event.new
-        if self.controller.is_running and new > self.controller.model.nrow:
+        if new > self.nbr_row:
             self.spinner_row.value = event.old
             return
-        self.row = new
+
+        self.update()
 
     def update(self):
-        valid, x_data, y_data = self.controller.get_full_data(self.row, self.col)
+        valid, x_data, y_data = self.controller.get_full_data()
 
         if not valid:
             return
         
-        self.pipe.send(pd.DataFrame({'x': x_data, 'y': y_data}, columns=['x', 'y']))
+        self.pipe.send((x_data, y_data))
 
     def start_streaming(self):
         if self.periodic_callback is None:

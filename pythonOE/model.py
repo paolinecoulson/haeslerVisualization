@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 
 class Model:
-    def __init__(self, num_channel, nbr_col, nbr_row, col_divider, row_divider, max_buffer_seconds=10):
+    def __init__(self, num_channel, nbr_col, nbr_row, col_divider, row_divider, max_buffer_seconds=30):
         self.fs = 1953.12  # Hz
         self.data_event = {}
 
@@ -80,7 +80,6 @@ class Model:
                         )
                     samples = raw.reshape((n_new, self.num_channel))
                     reshaped = samples.reshape(-1, self.nbr_row, self.nbr_col)
-                    print(reshaped.shape)
 
                     with self._lock:
                         # append new data, drop oldest if needed
@@ -104,80 +103,61 @@ class Model:
     def get_data_slice(self, start_sample, stop_sample, wait=True):
         """
         Return data between sample indices [start_sample, stop_sample).
-        Automatically waits if file not yet fully written.
-
-        Parameters
-        ----------
-        start_sample, stop_sample : int
-            Sample indices.
-        wait : bool, optional
-            Whether to wait for enough bytes if the file is still being written.
-
-
-        Returns
-        -------
-        data : np.ndarray
-            Shape (n_samples, nbr_row, nbr_col)
+        Waits if file not yet fully written, uses buffer if possible.
         """
         dtype = np.int16
         bytes_per_sample = np.dtype(dtype).itemsize * self.num_channel
         n_samples = stop_sample - start_sample
 
+        # --- Wait until file has enough bytes ---
+        if wait:
+            expected_bytes = stop_sample * bytes_per_sample
+            while True:
+                file_size = os.path.getsize(self.file)
+                if file_size >= expected_bytes:
+                    break
+                time.sleep(0.05)
+
+        # --- Try reading from buffer ---
         with self._lock:
-            buf_start = self._buffer_start_sample
-            buf_end = buf_start + self.data.shape[0]
+            if self.data is not None:
+                buf_start = self._buffer_start_sample
+                buf_end = buf_start + self.data.shape[0]
 
-            # ✅ CASE 1: fully inside buffer
-            if start_sample >= buf_start and stop_sample <= buf_end:
-                rel_start = start_sample - buf_start
-                rel_stop = stop_sample - buf_start
-                return self.data[rel_start:rel_stop, :, :].copy()
+                # Fully inside buffer
+                if start_sample >= buf_start and stop_sample <= buf_end:
+                    rel_start = start_sample - buf_start
+                    rel_stop = stop_sample - buf_start
+                    return self.data[rel_start:rel_stop, :, :].copy()
 
-        # ✅ CASE 2: need to read from disk
+        # --- If not in buffer, read from file ---
         offset_bytes = start_sample * bytes_per_sample
-        expected_bytes = n_samples * bytes_per_sample
+        file_size = os.path.getsize(self.file)
+        available_bytes = max(0, file_size - offset_bytes)
+        to_read_bytes = min(n_samples * bytes_per_sample, available_bytes)
 
-        # --- Wait until file is large enough, if needed
-        waited = 0.0
-        while True:
-            file_size = os.path.getsize(self.file)
-            available_bytes = file_size - offset_bytes
-            if available_bytes >= expected_bytes or not wait:
-                break
-            time.sleep(0.05)
-            waited += 0.05
-
-        # --- Read whatever is available
-        to_read = max(0, min(expected_bytes, file_size - offset_bytes))
-        if to_read <= 0:
-            # Not enough data yet
-            return np.zeros((n_samples, self.nbr_row, self.nbr_col), dtype=np.int16)
+        if to_read_bytes <= 0:
+            # Requested slice is not yet written
+            return np.zeros((n_samples, self.nbr_row, self.nbr_col), dtype=dtype)
 
         with open(self.file, "rb") as f:
             f.seek(offset_bytes)
-            raw = np.frombuffer(f.read(to_read), dtype=dtype)
+            raw = np.frombuffer(f.read(to_read_bytes), dtype=dtype)
 
-        # --- If incomplete, pad with zeros
         actual_samples = len(raw) // self.num_channel
-        raw = raw[:actual_samples * self.num_channel]  # safety trim
-        reshaped = raw.reshape((actual_samples, self.nbr_row, self.nbr_col))
+        reshaped = raw[:actual_samples*self.num_channel].reshape((actual_samples, self.nbr_row, self.nbr_col))
 
+        # Pad with zeros if slice incomplete
         if actual_samples < n_samples:
             pad_shape = (n_samples - actual_samples, self.nbr_row, self.nbr_col)
-            reshaped = np.concatenate(
-                [reshaped, np.zeros(pad_shape, dtype=np.int16)], axis=0
-            )
+            reshaped = np.concatenate([reshaped, np.zeros(pad_shape, dtype=dtype)], axis=0)
 
         return reshaped
 
-    def get_full_signal(self, nrow, ncol):
+
+    def get_full_signal(self):
         """
         Return the full signal for a given electrode position (nrow, ncol).
-        
-        Parameters
-        ----------
-        nrow, ncol : int
-            Position indices.
         
         Returns
         -------
@@ -191,7 +171,7 @@ class Model:
             start_sample = self._buffer_start_sample
 
         # --- Extract one channel
-        signal = data[:, nrow, ncol].astype(np.float64)
+        signal = data.copy().astype(np.float64)
 
         if self.sos_all is not None:
             try:
