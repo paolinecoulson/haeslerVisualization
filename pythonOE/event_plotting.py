@@ -490,7 +490,7 @@ class EventViewPanel(pn.viewable.Viewer):
 
             layout = hv.Layout(self.hv_plots).cols(nbr_col_display)
             
-            self.hv_layout = pn.pane.HoloViews(layout, center=True, sizing_mode="stretch_both")
+            self.hv_layout = pn.pane.HoloViews(layout, center=True)
             
             self.plot_area.clear()
             self.plot_area.append(self.hv_layout)

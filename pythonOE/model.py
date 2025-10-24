@@ -6,6 +6,7 @@ from scipy.signal import butter, sosfiltfilt, tf2sos, iirnotch
 import os
 from pathlib import Path
 from scipy.signal import welch, windows
+from sklearn.decomposition import TruncatedSVD
 
 class Model:
     def __init__(self, num_channel, nbr_col, nbr_row, col_divider, row_divider, max_buffer_seconds=30):
@@ -203,7 +204,7 @@ class Model:
         self.sos_all = np.vstack(sos_notches + [sos])
         self.denoise = denoise
 
-    def compute_psd_with_hanning(signal, nperseg=1024):
+    def compute_psd_with_hanning(signal, nperseg=256):
 
         window = windows.hann(nperseg)
         
@@ -219,9 +220,31 @@ class Model:
 
         psd_db = 10 * np.log10(psd)
         return freqs, psd_db
+    
+    def svd_denoise(data, n_components=20):
+        if len(np.shape(data)) == 3:
+            N, M, T = data.shape
+            data_2d = data.reshape(N * M, T)
+            svd = TruncatedSVD(n_components=n_components)
+            transformed = svd.fit_transform(data_2d)
+            denoised_2d = svd.inverse_transform(transformed)
+            denoised = denoised_2d.reshape(N, M, T)
+        else:
+            svd = TruncatedSVD(n_components=n_components)
+            transformed = svd.fit_transform(data)
+            denoised = svd.inverse_transform(transformed)
+        return denoised
+
 
     def aply_denoise(self, signal):
-        
+        data = self.data_notch.copy()
+        data_2d = data.reshape(self.numMux*self.numAna, np.shape(data)[2])
+        denoised_data = svd_denoise(data_2d, n_components=5)
+        num_bands = 10
+        bands, residual = np.array_split(denoised_data, num_bands), np.zeros_like(denoised_data) # tqwt decompose
+        denoised_bands = [svd_denoise(band,n_components=3) for band in bands]
+        reconstructed_signal = np.concatenate(denoised_bands) + residual # tqwt reconstruct
+        self.data_svd = reconstructed_signal.reshape(self.numMux,self.numAna,np.shape(reconstructed_signal)[1])
 
         return signal 
 
