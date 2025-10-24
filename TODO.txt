@@ -1,0 +1,8 @@
+TODO 
+
+- fix creation of events 
+- add timeseries in the timeseries plotting 
+- add widget to select cell to look in the timeseries
+
+- add secondary display (dsp / other function)
+

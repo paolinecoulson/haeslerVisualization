@@ -454,7 +454,7 @@ class EventViewPanel(pn.viewable.Viewer):
                                                                         yaxis=None,   
                                                                         show_grid=True,
                                                                         show_legend=False,
-                                                                        responsive=True,
+                                                                        responsive=False,
                                                                         tools=[], active_tools=[],
                                                                         
                                                                     )
