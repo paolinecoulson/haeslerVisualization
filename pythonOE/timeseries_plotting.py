@@ -23,6 +23,8 @@ class TimeseriesView(pn.viewable.Viewer):
 
         self.pipe = Pipe(data=(np.zeros((0,0)), np.zeros((0,1,1))))
 
+        
+
         def overlay_with_events(data):
             elements = []
             x,y = data

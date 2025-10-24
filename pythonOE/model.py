@@ -5,6 +5,7 @@ import threading
 from scipy.signal import butter, sosfiltfilt, tf2sos, iirnotch
 import os
 from pathlib import Path
+from scipy.signal import welch, windows
 
 class Model:
     def __init__(self, num_channel, nbr_col, nbr_row, col_divider, row_divider, max_buffer_seconds=30):
@@ -35,6 +36,7 @@ class Model:
 
         # --- Filters
         self.sos_all = None
+        self.denoise = False
 
 
     def start_stream(self, poll_interval=0.1):
@@ -175,10 +177,13 @@ class Model:
 
         if self.sos_all is not None:
             try:
+                signal = scipy.signal.detrend(signal, type='linear')
                 signal = sosfiltfilt(self.sos_all, signal, axis=0)
             except Exception as e:
                 print(f"Filter full signal error: {e}")
 
+        if self.denoise: 
+            signal = self.apply_denoise(signal)
         # --- Build time axis (seconds)
         n_samples = signal.shape[0]
         x = (np.arange(start_sample, start_sample + n_samples) / self.fs)
@@ -187,7 +192,7 @@ class Model:
     # ----------------------------------------------------------------
     # Analysis functions
     # ----------------------------------------------------------------
-    def setup_filters(self, lowcut, highcut, order, notch_freq):
+    def setup_filters(self, lowcut, highcut, order, notch_freq, denoise):
         sos = butter(order, [lowcut, highcut], btype='bandpass', fs=self.fs, output='sos')
         sos_notches = []
         for notch in notch_freq:
@@ -196,27 +201,52 @@ class Model:
                     b, a = iirnotch(w0=notch[0] * (i + 1), Q=40, fs=self.fs)
                     sos_notches.append(tf2sos(b, a))
         self.sos_all = np.vstack(sos_notches + [sos])
+        self.denoise = denoise
+
+    def compute_psd_with_hanning(signal, nperseg=1024):
+
+        window = windows.hann(nperseg)
+        
+        freqs, psd = welch(
+            signal,
+            fs=self.fs,
+            window=window,
+            nperseg=nperseg,
+            axis=-1,       # Compute along the sample axis
+            scaling='density',
+            average='mean'
+        )
+
+        psd_db = 10 * np.log10(psd)
+        return freqs, psd_db
+
+    def aply_denoise(self, signal):
+        
+
+        return signal 
 
     def compute_event(self, event_ts):
         """Compute event snapshot, loading from buffer or disk as needed."""
         start = max(0, event_ts - self.snapshot_len)
         stop = event_ts + self.snapshot_len
-        data = self.get_data_slice(start, stop)
+        signal = self.get_data_slice(start, stop)
 
         if self.sos_all is not None:
             try:
-                data = sosfiltfilt(self.sos_all, data, axis=0)
+                signal = scipy.signal.detrend(signal, type='linear')
+                signal = sosfiltfilt(self.sos_all, signal, axis=0)
             except Exception as e:
                 print("event Filter error:", e)
-
-        reshaped = data.reshape(
-            (data.shape[0],
+        if denoise: 
+            signal = self.apply_denoise(signal)
+        reshaped = signal.reshape(
+            (signal.shape[0],
              int(self.nbr_row/self.row_divider), self.row_divider,
              int(self.nbr_col/self.col_divider), self.col_divider)
         )
         reshaped = reshaped.transpose(1, 3, 0, 2, 4).reshape(
             (int(self.num_channel/(self.col_divider*self.row_divider)),
-             data.shape[0], self.row_divider, self.col_divider)
+             signal.shape[0], self.row_divider, self.col_divider)
         )
         meaned = np.mean(reshaped, axis=(2, 3))
         self.data_event[event_ts] = meaned

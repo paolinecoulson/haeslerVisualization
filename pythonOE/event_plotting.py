@@ -124,7 +124,10 @@ class EventViewPanel(pn.viewable.Viewer):
         self.events_section = pn.Column()  # will hold checkboxes for created event groups
 
         # For created event groups we still track checkboxes like in original code
-
+        self.PSD = pn.widgets.Checkbox(name=f"PSD", value=False)
+        self.PSD.param.watch(self.update_sources, "value")
+        
+        self.denoise = pn.widgets.Checkbox(name=f"Denoise", value=False)
 
         self.ts_widget = TimeseriesView(controller, self.ncols, self.nrows)
         # ---------------------------
@@ -134,9 +137,10 @@ class EventViewPanel(pn.viewable.Viewer):
         self.filter_panel = pn.Card(
             pn.Column(
                 pn.pane.Markdown("**Bandpass filter parameters**"),
-                pn.Row(self.lowcut_spin, self.highcut_spin),
+                pn.Row(self.lowcut_spin, self.highcut_spin, self.denoise),
                 pn.Row(pn.Spacer(width=100),self.order_spin,pn.Spacer(width=100)),
                 pn.Row(self.add_notch_btn, self.clear_notch_btn),
+                
                 self.notch_layout,
                 self.filter_apply_btn,
             ),
@@ -202,7 +206,7 @@ class EventViewPanel(pn.viewable.Viewer):
                     sidebar_width = 400,
                     main=[loading_controls,  
                           pn.Row(self.filter_panel, self.event_panel, add_event_panel),
-                          pn.Row(self.dropdown, self.spinner_duration), 
+                          pn.Row(self.dropdown, self.spinner_duration, self.PSD), 
                           self.plot_area
                           ], 
                     title = "NeuroLayer real-time visualization")
@@ -305,7 +309,7 @@ class EventViewPanel(pn.viewable.Viewer):
 
     def _apply_filters(self, event=None):
         notch_filter = [(w[0].value, w[1].value) for w in self.notch_widgets]
-        self.controller.update_freq(self.lowcut_spin.value, self.highcut_spin.value, self.order_spin.value, notch_filter)
+        self.controller.update_filter(self.lowcut_spin.value, self.highcut_spin.value, self.order_spin.value, notch_filter, bool(self.denoise.value))
 
     # ---------------------------
     # Probe / View helpers
@@ -450,7 +454,7 @@ class EventViewPanel(pn.viewable.Viewer):
                                                                         yaxis=None,   
                                                                         show_grid=True,
                                                                         show_legend=False,
-                                                                        responsive=False,
+                                                                        responsive=True,
                                                                         tools=[], active_tools=[],
                                                                         
                                                                     )
@@ -486,7 +490,7 @@ class EventViewPanel(pn.viewable.Viewer):
 
             layout = hv.Layout(self.hv_plots).cols(nbr_col_display)
             
-            self.hv_layout = pn.pane.HoloViews(layout, center=True)
+            self.hv_layout = pn.pane.HoloViews(layout, center=True, sizing_mode="stretch_both")
             
             self.plot_area.clear()
             self.plot_area.append(self.hv_layout)
@@ -500,9 +504,9 @@ class EventViewPanel(pn.viewable.Viewer):
         thread = threading.Thread(target=create_plots, daemon=True)
         thread.start()
 
-    def update_sources(self):
+    def update_sources(self, *args, **kwargs):
         """Called by controller when new data is available (or by user)."""
-        x, y = self.controller.get_data_event()
+        x, y = self.controller.get_data_event(psd = bool(self.PSD.value))
         x = np.asarray(x)
         if self.hv_layout is not None:
             self.pipes.send((x, np.asarray(y)))

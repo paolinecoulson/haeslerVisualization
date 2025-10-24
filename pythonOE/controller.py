@@ -115,7 +115,7 @@ class Controller:
             self.view.update_sources()
         self.executor.submit(update_)
     
-    def update_freq(self, lc=None, hc=None, order=None, notch_freq=None):
+    def update_filter(self, lc=None, hc=None, order=None, notch_freq=None, denoise=False):
         if order is not None:
             self.order = order
 
@@ -128,11 +128,12 @@ class Controller:
         if notch_freq is not None: 
             self.notch_freq = notch_freq
 
+        self.denoise= denoise
         def update_():
             if self.model is None: 
                 return
 
-            self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq)
+            self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq, self.denoise)
 
             for value in self.events:
                 self.model.compute_event(self.events[value])
@@ -143,7 +144,7 @@ class Controller:
         self.executor.submit(update_)
 
 
-    def get_data_event(self):
+    def get_data_event(self, psd=False):
         
         if self.event_type in self.events:
             return self.model.x, self.model.data_event[self.events[self.event_type]]
@@ -154,7 +155,7 @@ class Controller:
             
             if len(all_ts) != 0: 
                 d = []
-                print(all_ts)
+                
                 for ts in all_ts: 
                     d.append(self.model.data_event[ts])
 
@@ -163,6 +164,10 @@ class Controller:
                 return self.model.x, d
         
         x, y = self.model.reset_xy(self.event_duration)
+
+        if psd: 
+            x,y = self.model.compute_psd_with_hanning(y)
+
         return x, y
 
 
