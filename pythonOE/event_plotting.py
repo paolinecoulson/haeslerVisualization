@@ -32,7 +32,8 @@ class EventViewPanel(pn.viewable.Viewer):
     def __init__(self, controller):
         self.controller = controller
         self.controller.set_view_callback(self)  # keep same contract
-
+        
+        self.current_xlim=(None, None) 
         # Internal state (kept similar to original)
         self.nrows = 32
         self.ncols = 96
@@ -453,7 +454,10 @@ class EventViewPanel(pn.viewable.Viewer):
                 for j in range(nbr_row_display):
                     def get_curve(data, nbr_row_display=nbr_row_display, i=i, j=j):
                             x, y = data
-                            return hv.Curve((x, y[i*nbr_row_display + j, :]))
+                            curve =  hv.Curve((x, y[i*nbr_row_display + j, :]))
+                            if self.current_xlim != (None, None):
+                                curve = curve.redim.range(x=self.current_xlim)
+                            return curve
 
                     dmap = hv.DynamicMap(get_curve, streams=[self.pipes]).opts(subcoordinate_y=True,
                                                                         subcoordinate_scale=1,
@@ -462,9 +466,11 @@ class EventViewPanel(pn.viewable.Viewer):
                                                                         show_grid=True,
                                                                         show_legend=False,
                                                                         responsive=True,
-                                                                        padding = (0.1, 0.1),
                                                                         tools=[], active_tools=[],
-                                                                        toolbar=None
+                                                                        toolbar=None,
+                                                                        xrotation=45,
+                                                                        fontsize={'xticks': 8, 'xlabel': 10},
+                                                                        xticks=5
                                                                         
                                                                     )
                     
@@ -497,11 +503,6 @@ class EventViewPanel(pn.viewable.Viewer):
              
                 self.hv_plots.append(overlay)
 
-            #layout = hv.Layout(self.hv_plots).cols(nbr_col_display)
-            #self.hv_layout = pn.Row(*self.hv_plots, sizing_mode='stretch_both')
-    
-            #self.hv_layout = pn.pane.HoloViews(layout, center=True)
-            
             self.plot_area.extend(self.hv_plots)
             self.load_button.name = "Load probe view"
             self.load_button.disabled = False
@@ -519,8 +520,13 @@ class EventViewPanel(pn.viewable.Viewer):
             x, y = self.controller.get_data_event(psd = bool(self.PSD.value))
             x = np.asarray(x)
 
-            self.pipes.send((x, np.asarray(y)))   
-                 
+            if len(self.plot_area) >1:
+                if self.PSD.value:
+                    self.current_xlim=(0, 200)
+                else:
+                    self.current_xlim=(None, None)  # Auto xlim 
+
+                self.pipes.send((x, np.asarray(y)))   
         except Exception as e: 
             print(e)
 
