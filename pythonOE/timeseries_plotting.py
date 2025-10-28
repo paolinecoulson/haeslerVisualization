@@ -9,11 +9,11 @@ pn.extension('bokeh')
 hv.extension('bokeh')
 
 class TimeseriesView(pn.viewable.Viewer):
-    def __init__(self, controller, nbr_col, nbr_row, update_period=1000,**params):
+    def __init__(self, controller, nbr_col, nbr_row, update_period=1000, **params):
         super().__init__(**params)
         self.controller = controller
-        self.sub_curves= []
-        self.periodic_callback= None
+        self.sub_curves = []
+        self.periodic_callback = None
         self.update_period = update_period  # in ms
         rolling_window = 5000*3
         self.event_drawed = []
@@ -23,36 +23,89 @@ class TimeseriesView(pn.viewable.Viewer):
 
         self.pipe = Pipe(data=(np.zeros((0,0)), np.zeros((0,1,1))))
 
-        
-
         def overlay_with_events(data):
             elements = []
             x, y = data
+            offset = 0  # initial vertical offset
+            spacing_factor = 1.5  # how much space between traces (e.g. 10% more than previous max)
 
             for i, sub in enumerate(self.sub_curves):
                 row = sub['spinner_row'].value
                 col = sub['spinner_col'].value
-                y_sub = y[:, row, col]
+                
+                # Bounds checking
+                if row >= y.shape[1] or col >= y.shape[2]:
+                    continue
+                
+                if y.shape[0] == 0:
+                    elements.append(
+                        hv.Curve(([],[]), label=f"(R{row}, C{col})")
+                        .opts(
+                            axiswise=False, 
+                            framewise=True,
+                            line_width=2,  # Thicker lines for visibility
+                        )
+                    )
+                    continue
+                    
+                y_sub = y[:, row, col] + offset
 
-                elements.append(hv.Curve((x, y_sub), label=f"Sub {i} ({row},{col})").opts(axiswise=False, framewise=True))
-                                
+
+                elements.append(
+                    hv.Curve((x,  y_sub), label=f"(R{row}, C{col})")
+                    .opts(
+                        axiswise=False, 
+                        framewise=True,
+                        line_width=2,  # Thicker lines for visibility
+                    )
+                )
+
+                offset = np.max(y_sub) * spacing_factor
 
             # Event markers
-            for ts in self.controller.events.values():
+            for event_name, ts in self.controller.events.items():
+                print(ts)
                 vloc = ts * self.controller.model.fs
-                elements.append(hv.VLine(vloc).opts(line_color='red', line_width=1, line_dash='dashed'))
+                print(vloc)
+                elements.append(
+                    hv.VLine(vloc).opts(
+                        line_color='red', 
+                        line_width=2,  # Thicker for visibility
+                        line_dash='dashed',
+                    )
+                )
 
 
-            ov = hv.Overlay(elements).opts( subcoordinate_y=True, subcoordinate_scale=0.1,                    
-                                            yaxis='left',
-                                            show_grid=True,
-                                            responsive=False,
-                                            show_legend=True,
-                                            tools=['xwheel_zoom','ywheel_zoom', 'xpan'], 
-                                            active_tools=['ywheel_zoom'] )
+            ov = hv.Overlay(elements).opts(
+                yaxis='left',
+                show_grid=True,
+                responsive=True,  # Changed to True for responsiveness
+                show_legend=True,
+                legend_position='top_right',  # Better legend placement
+                legend_offset=(10, 10),
+                tools=['xwheel_zoom', 'ywheel_zoom', 'xpan', 'reset'], 
+                active_tools=['ywheel_zoom'],
+                height=500,  # Fixed height for better control
+                xlabel="Time (samples)",
+                ylabel="Amplitude",
+                # Font size adjustments
+                fontsize={
+                    'title': 12,
+                    'labels': 10,
+                    'xticks': 8,
+                    'yticks': 8,
+                    'legend': 9
+                },
+                # Tick adjustments to prevent overlap
+                xticks=6,
+                xrotation=45,
+            )
             return ov
         
-        self.add_sub_button = pn.widgets.Button(name="+ Add Sub-Signal", button_type="primary")
+        self.add_sub_button = pn.widgets.Button(
+            name="+ Add signal", 
+            button_type="primary"
+        )
         self.add_sub_button.on_click(self.add_sub_curve)
 
         self.controls = pn.Column(
@@ -62,47 +115,101 @@ class TimeseriesView(pn.viewable.Viewer):
         self.add_sub_curve()
 
         dmap = hv.DynamicMap(
-                lambda data: overlay_with_events(data),
-                streams=[self.pipe]  # buffer triggers the redraw
-            )
+            lambda data: overlay_with_events(data),
+            streams=[self.pipe]
+        )
 
         self.plot = dmap
-        self._panel = pn.Column(self.controls, pn.pane.HoloViews(self.plot, sizing_mode="stretch_width"))
+        
+        self._panel = pn.Column(
+            self.controls, 
+            pn.pane.HoloViews(
+                self.plot, 
+                sizing_mode="stretch_both",  # Better responsiveness
+                min_height=400
+            ),
+            sizing_mode="stretch_both"
+        )
 
     def update_grid(self,  nbr_col,  nbr_row):
         self.nbr_row = nbr_row
         self.nbr_col = nbr_col 
 
     def add_sub_curve(self, event=None):
-        # Row/col spinners
+        # Determine max values based on actual data dimensions
+        max_row = self.nbr_row - 1 if self.nbr_row > 0 else 1000
+        max_col = self.nbr_col - 1 if self.nbr_col > 0 else 1000
+        
+        # Row/col spinners with proper bounds
         spinner_row = pn.widgets.Spinner(
-            name="Sub Row", start=0, end=1000, step=1, value=0
+            name="Row", 
+            start=0, 
+            end=max_row, 
+            step=1, 
+            value=min(len(self.sub_curves), max_row),  # Auto-increment default value
+            align="center"
         )
         spinner_col = pn.widgets.Spinner(
-            name="Sub Column", start=0, end=1000, step=1, value=0
+            name="Column", 
+            start=0, 
+            end=max_col, 
+            step=1, 
+            value=0,
+            align="center"
         )
-        remove_btn = pn.widgets.Button(name="Remove", button_type="danger")
+        
+        remove_btn = pn.widgets.Button(
+            name="✕", 
+            button_type="danger",
+            align="center"
+        )
+        
+        # Watch for changes
         spinner_col.param.watch(self.update_column, "value")
         spinner_row.param.watch(self.update_row, "value")
 
-        c = pn.Row(spinner_row, spinner_col, remove_btn)
+        c = pn.Row(
+            spinner_row, 
+            spinner_col, 
+            remove_btn,
+            sizing_mode="stretch_width"
+        )
+
+        # Store reference to the row component in sub_curves
+        sub_entry = {
+            'spinner_row': spinner_row,
+            'spinner_col': spinner_col,
+            'remove_btn': remove_btn,
+            'row_component': c,  # Store reference for easier removal
+            'index': len(self.sub_curves)  # Track original index
+        }
 
         # Remove callback
         def remove_callback(ev):
-            self.controls.remove(c)
-            self.sub_curves[:] = [s for s in self.sub_curves if s['spinner_row'] != spinner_row]
+            # Remove the visual component
+            if c in self.controls:
+                self.controls.remove(c)
+            
+            # Remove from sub_curves list
+            if sub_entry in self.sub_curves:
+                self.sub_curves.remove(sub_entry)
+            
+            # Update labels for remaining sub-curves
+            for i, sub in enumerate(self.sub_curves):
+                if 'row_component' in sub and len(sub['row_component']) > 0:
+                    # Update the label
+                    sub['row_component'][0].object = f""
+                    sub['index'] = i
+            
+            # Trigger update
             self.update()
 
         remove_btn.on_click(remove_callback)
 
-        # Store sub-curve
-        self.sub_curves.append({
-            'spinner_row': spinner_row,
-            'spinner_col': spinner_col,
-            'remove_btn': remove_btn
-        })
-
+        # Add to list and controls
+        self.sub_curves.append(sub_entry)
         self.controls.append(c)
+        
         self.update()
 
     def __panel__(self):
