@@ -29,8 +29,9 @@ class Controller:
         self.hc = 200
         self.order = 4
         self.notch_freq = []
+        self.denoise = False
 
-        self.executor = ThreadPoolExecutor(max_workers=5)
+        self.executor = ThreadPoolExecutor(max_workers=1)
 
     def close(self):
         self.executor.shutdown(wait=False)
@@ -52,7 +53,7 @@ class Controller:
         print(f"Desktop path: {self.model.data_path}")
 
         self.view.clear_events()
-        self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq)
+        self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq, self.denoise)
 
         return self.selected_folder, self.data_folder
 
@@ -99,6 +100,15 @@ class Controller:
 
         self.executor.submit(add_event_in_thread, self.nbr_event_received)
 
+    def update_psd(self, psd):
+        
+        def update_():
+            if self.model is not None:
+                for value in self.events:
+                    self.model.compute_event(self.events[value], psd=psd)
+
+            self.view.update_sources()
+        self.executor.submit(update_)
 
     def update_nbr_events(self, new):
         self.nbr_events = new
@@ -128,17 +138,18 @@ class Controller:
         if notch_freq is not None: 
             self.notch_freq = notch_freq
 
-        self.denoise= denoise
+        self.denoise = denoise
+
         def update_():
             if self.model is None: 
                 return
+            try: 
+                self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq, self.denoise)
 
-            self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq, self.denoise)
-
-            for value in self.events:
-                self.model.compute_event(self.events[value])
-            
-
+                for value in self.events:
+                    self.model.compute_event(self.events[value])
+            except Exception as e: 
+                print(str(e))
             self.view.update_sources()
         
         self.executor.submit(update_)
@@ -147,7 +158,8 @@ class Controller:
     def get_data_event(self, psd=False):
         
         if self.event_type in self.events:
-            return self.model.x, self.model.data_event[self.events[self.event_type]]
+            x = self.model.x
+            y = self.model.data_event[self.events[self.event_type]]
         
         elif self.event_type in self.special_events:
 
@@ -160,10 +172,11 @@ class Controller:
                     d.append(self.model.data_event[ts])
 
                 d = np.stack(d)
-                d = np.mean(d, axis=0)
-                return self.model.x, d
-        
-        x, y = self.model.reset_xy(self.event_duration)
+                y = np.mean(d, axis=0)
+                x = self.model.x
+
+        else:
+            x, y = self.model.reset_xy(self.event_duration)
 
         if psd: 
             x,y = self.model.compute_psd_with_hanning(y)

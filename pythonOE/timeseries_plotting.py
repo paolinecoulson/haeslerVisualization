@@ -27,7 +27,7 @@ class TimeseriesView(pn.viewable.Viewer):
 
         def overlay_with_events(data):
             elements = []
-            x,y = data
+            x, y = data
 
             for i, sub in enumerate(self.sub_curves):
                 row = sub['spinner_row'].value

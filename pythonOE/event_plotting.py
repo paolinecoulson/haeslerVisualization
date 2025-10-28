@@ -124,10 +124,10 @@ class EventViewPanel(pn.viewable.Viewer):
         self.events_section = pn.Column()  # will hold checkboxes for created event groups
 
         # For created event groups we still track checkboxes like in original code
-        self.PSD = pn.widgets.Checkbox(name=f"PSD", value=False)
-        self.PSD.param.watch(self.update_sources, "value")
+        self.PSD = pn.widgets.Checkbox(name=f"PSD", value=False, align="center")
+        self.PSD.param.watch(self._update_psd, "value")
         
-        self.denoise = pn.widgets.Checkbox(name=f"Denoise", value=False)
+        self.denoise = pn.widgets.Checkbox(name=f"Denoise", value=False, align="center")
 
         self.ts_widget = TimeseriesView(controller, self.ncols, self.nrows)
         # ---------------------------
@@ -173,14 +173,14 @@ class EventViewPanel(pn.viewable.Viewer):
             collapsible=True,
             collapsed=True,
             sizing_mode="stretch_width",
-             margin=(10, 10, 10, 10),  # (top, right, bottom, left)
+            margin=(10, 10, 10, 10),  # (top, right, bottom, left)
         )
 
         acquisition_folder = pn.Card(
             pn.Column(self.select_folder_btn, self.path_display,self.folder_display),
             title="Acquisition folder",
             sizing_mode="stretch_width",
-             margin=(20, 0, 20, 0),  # (top, right, bottom, left)
+            margin=(20, 0, 20, 0),  # (top, right, bottom, left)
 
         )
 
@@ -188,7 +188,7 @@ class EventViewPanel(pn.viewable.Viewer):
             pn.Column(self.file_input, self.download_btn),
             title="Configuration",
             sizing_mode="stretch_width",
-             margin=(20, 0, 20, 0),  # (top, right, bottom, left)
+            margin=(20, 0, 20, 0),  # (top, right, bottom, left)
 
         )
 
@@ -199,17 +199,19 @@ class EventViewPanel(pn.viewable.Viewer):
 
         loading_controls = pn.Row(self.start_btn, self.stop_btn, self.spinner_nbr_events,sizing_mode="stretch_width")
 
-        self.plot_area = pn.Column(pn.widgets.StaticText(name="", value="No probe view loaded."), sizing_mode="stretch_both")
+        self.plot_area = pn.Row(pn.widgets.StaticText(name="", value="No probe view loaded."), sizing_mode="stretch_both",height_policy='max')
 
         self.layout = pn.template.FastListTemplate(
                     sidebar=[config_panel, self.probe_panel, acquisition_folder, self.ts_widget], # 
                     sidebar_width = 400,
-                    main=[loading_controls,  
+                    title = "NeuroLayer real-time visualization")
+
+        self.layout.main[:]=[loading_controls,  
                           pn.Row(self.filter_panel, self.event_panel, add_event_panel),
                           pn.Row(self.dropdown, self.spinner_duration, self.PSD), 
                           self.plot_area
-                          ], 
-                    title = "NeuroLayer real-time visualization")
+                          ]
+
 
     def __panel__(self):
         return self.layout 
@@ -314,6 +316,10 @@ class EventViewPanel(pn.viewable.Viewer):
     # ---------------------------
     # Probe / View helpers
     # ---------------------------
+
+    def _update_psd(self, event=None):
+        self.controller.update_psd(self.PSD.value)
+
     def _on_ch_col_change(self, event):
         self.ncols = event.new
         self.ts_widget.update_grid(self.ncols, self.nrows)
@@ -342,7 +348,7 @@ class EventViewPanel(pn.viewable.Viewer):
         if name == "":
             return
         # gather currently active checkboxes
-        selected = [cb.name for cb in self.event_checkboxes if cb.value]
+        selected = [int(cb.name) for cb in self.events_section if cb.value]
         if not selected:
             return
         print(selected)
@@ -435,6 +441,7 @@ class EventViewPanel(pn.viewable.Viewer):
         # Pre-allocate empty curves
         self.pipes = None
         self.hv_plots = []
+        self.plot_area.clear()
 
         def create_plots():
             self.pipes = Pipe(data=(np.asarray(x),np.asarray(y)))
@@ -450,12 +457,14 @@ class EventViewPanel(pn.viewable.Viewer):
 
                     dmap = hv.DynamicMap(get_curve, streams=[self.pipes]).opts(subcoordinate_y=True,
                                                                         subcoordinate_scale=1,
-                                                                        width = 120,
+                                                                        min_width = 120,
                                                                         yaxis=None,   
                                                                         show_grid=True,
                                                                         show_legend=False,
-                                                                        responsive=False,
+                                                                        responsive=True,
+                                                                        padding = (0.1, 0.1),
                                                                         tools=[], active_tools=[],
+                                                                        toolbar=None
                                                                         
                                                                     )
                     
@@ -467,7 +476,7 @@ class EventViewPanel(pn.viewable.Viewer):
                     dmap = dmap.relabel(f"R {j*self.row_divider+1}-{(j+1)*self.row_divider}")
                     
                     if i == 0: 
-                        dmap.opts(yaxis='left', width = 220) 
+                        dmap.opts(yaxis='left', min_width = 220) 
                         
                     if self.col_divider == 1: 
                         label =  f"C {i*self.col_divider+1}"
@@ -488,13 +497,12 @@ class EventViewPanel(pn.viewable.Viewer):
              
                 self.hv_plots.append(overlay)
 
-            layout = hv.Layout(self.hv_plots).cols(nbr_col_display)
+            #layout = hv.Layout(self.hv_plots).cols(nbr_col_display)
+            #self.hv_layout = pn.Row(*self.hv_plots, sizing_mode='stretch_both')
+    
+            #self.hv_layout = pn.pane.HoloViews(layout, center=True)
             
-            self.hv_layout = pn.pane.HoloViews(layout, center=True)
-            
-            self.plot_area.clear()
-            self.plot_area.append(self.hv_layout)
-
+            self.plot_area.extend(self.hv_plots)
             self.load_button.name = "Load probe view"
             self.load_button.disabled = False
 
@@ -504,14 +512,17 @@ class EventViewPanel(pn.viewable.Viewer):
         thread = threading.Thread(target=create_plots, daemon=True)
         thread.start()
 
+
     def update_sources(self, *args, **kwargs):
         """Called by controller when new data is available (or by user)."""
-        x, y = self.controller.get_data_event(psd = bool(self.PSD.value))
-        x = np.asarray(x)
-        if self.hv_layout is not None:
-            self.pipes.send((x, np.asarray(y)))
+        try: 
+            x, y = self.controller.get_data_event(psd = bool(self.PSD.value))
+            x = np.asarray(x)
 
-            
+            self.pipes.send((x, np.asarray(y)))   
+                 
+        except Exception as e: 
+            print(e)
 
 controller = Controller()
 stream = DataStream(controller)

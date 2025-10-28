@@ -2,14 +2,14 @@
 import numpy as np
 import time
 import threading
-from scipy.signal import butter, sosfiltfilt, tf2sos, iirnotch
+from scipy.signal import butter, sosfiltfilt, tf2sos, iirnotch, detrend,  welch, windows
 import os
 from pathlib import Path
-from scipy.signal import welch, windows
+
 from sklearn.decomposition import TruncatedSVD
 
 class Model:
-    def __init__(self, num_channel, nbr_col, nbr_row, col_divider, row_divider, max_buffer_seconds=30):
+    def __init__(self, num_channel, nbr_col, nbr_row, col_divider, row_divider, max_buffer_seconds=2):
         self.fs = 1953.12  # Hz
         self.data_event = {}
 
@@ -178,7 +178,7 @@ class Model:
 
         if self.sos_all is not None:
             try:
-                signal = scipy.signal.detrend(signal, type='linear')
+                signal = signal - np.mean(signal, axis=0)
                 signal = sosfiltfilt(self.sos_all, signal, axis=0)
             except Exception as e:
                 print(f"Filter full signal error: {e}")
@@ -204,8 +204,7 @@ class Model:
         self.sos_all = np.vstack(sos_notches + [sos])
         self.denoise = denoise
 
-    def compute_psd_with_hanning(signal, nperseg=256):
-
+    def compute_psd_with_hanning(self, signal, nperseg=256):
         window = windows.hann(nperseg)
         
         freqs, psd = welch(
@@ -236,32 +235,33 @@ class Model:
         return denoised
 
 
-    def aply_denoise(self, signal):
-        data = self.data_notch.copy()
-        data_2d = data.reshape(self.numMux*self.numAna, np.shape(data)[2])
+    def apply_denoise(self, signal):
+        data_2d = signal.reshape(signal.shape[0], self.nbr_col*self.nbr_row)
         denoised_data = svd_denoise(data_2d, n_components=5)
         num_bands = 10
         bands, residual = np.array_split(denoised_data, num_bands), np.zeros_like(denoised_data) # tqwt decompose
         denoised_bands = [svd_denoise(band,n_components=3) for band in bands]
         reconstructed_signal = np.concatenate(denoised_bands) + residual # tqwt reconstruct
-        self.data_svd = reconstructed_signal.reshape(self.numMux,self.numAna,np.shape(reconstructed_signal)[1])
+        data_svd = reconstructed_signal.reshape(reconstructed_signal.shape[0], self.nbr_col,self.nbr_row)
 
-        return signal 
+        return data_svd 
 
-    def compute_event(self, event_ts):
+    def compute_event(self, event_ts, psd=False):
         """Compute event snapshot, loading from buffer or disk as needed."""
         start = max(0, event_ts - self.snapshot_len)
         stop = event_ts + self.snapshot_len
         signal = self.get_data_slice(start, stop)
 
-        if self.sos_all is not None:
-            try:
-                signal = scipy.signal.detrend(signal, type='linear')
-                signal = sosfiltfilt(self.sos_all, signal, axis=0)
-            except Exception as e:
-                print("event Filter error:", e)
-        if denoise: 
-            signal = self.apply_denoise(signal)
+        if not psd: 
+            if self.sos_all is not None:
+                try:
+                    signal = signal - np.mean(signal, axis=0)
+                    signal = sosfiltfilt(self.sos_all, signal, axis=0)
+                except Exception as e:
+                    print("event Filter error:", e)
+            if self.denoise: 
+                signal = self.apply_denoise(signal)
+
         reshaped = signal.reshape(
             (signal.shape[0],
              int(self.nbr_row/self.row_divider), self.row_divider,
