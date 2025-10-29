@@ -155,7 +155,7 @@ class Model:
             pad_shape = (n_samples - actual_samples, self.nbr_row, self.nbr_col)
             reshaped = np.concatenate([reshaped, np.zeros(pad_shape, dtype=dtype)], axis=0)
 
-        return reshaped
+        return reshaped.copy()
 
 
     def get_full_signal(self):
@@ -220,7 +220,7 @@ class Model:
         psd_db = 10 * np.log10(psd)
         return freqs, psd_db
     
-    def svd_denoise(data, n_components=20):
+    def svd_denoise(self, data, n_components=20):
         if len(np.shape(data)) == 3:
             N, M, T = data.shape
             data_2d = data.reshape(N * M, T)
@@ -237,10 +237,10 @@ class Model:
 
     def apply_denoise(self, signal):
         data_2d = signal.reshape(signal.shape[0], self.nbr_col*self.nbr_row)
-        denoised_data = svd_denoise(data_2d, n_components=5)
+        denoised_data = self.svd_denoise(data_2d, n_components=5)
         num_bands = 10
         bands, residual = np.array_split(denoised_data, num_bands), np.zeros_like(denoised_data) # tqwt decompose
-        denoised_bands = [svd_denoise(band,n_components=3) for band in bands]
+        denoised_bands = [self.svd_denoise(band,n_components=3) for band in bands]
         reconstructed_signal = np.concatenate(denoised_bands) + residual # tqwt reconstruct
         data_svd = reconstructed_signal.reshape(reconstructed_signal.shape[0], self.nbr_col,self.nbr_row)
 

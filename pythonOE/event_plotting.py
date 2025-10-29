@@ -125,10 +125,10 @@ class EventViewPanel(pn.viewable.Viewer):
         self.events_section = pn.Column()  # will hold checkboxes for created event groups
 
         # For created event groups we still track checkboxes like in original code
-        self.PSD = pn.widgets.Checkbox(name=f"PSD", value=False, align="center")
+        self.PSD = pn.widgets.Checkbox(name=f"PSD", value=False, align="end")
         self.PSD.param.watch(self._update_psd, "value")
         
-        self.denoise = pn.widgets.Checkbox(name=f"Denoise", value=False, align="center")
+        self.denoise = pn.widgets.Checkbox(name=f"Denoise", value=False, align="end")
 
         self.ts_widget = TimeseriesView(controller, self.ncols, self.nrows)
         # ---------------------------
@@ -138,8 +138,9 @@ class EventViewPanel(pn.viewable.Viewer):
         self.filter_panel = pn.Card(
             pn.Column(
                 pn.pane.Markdown("**Bandpass filter parameters**"),
-                pn.Row(self.lowcut_spin, self.highcut_spin, self.denoise),
+                pn.Row(self.lowcut_spin, self.highcut_spin),
                 pn.Row(pn.Spacer(width=100),self.order_spin,pn.Spacer(width=100)),
+                self.denoise,
                 pn.Row(self.add_notch_btn, self.clear_notch_btn),
                 
                 self.notch_layout,
@@ -209,8 +210,7 @@ class EventViewPanel(pn.viewable.Viewer):
 
         self.layout.main[:]=[loading_controls,  
                           pn.Row(self.filter_panel, self.event_panel, add_event_panel),
-                          pn.Row(self.dropdown, self.spinner_duration, self.PSD), 
-                          self.plot_area
+                          pn.Column(pn.Row(self.dropdown, self.spinner_duration, self.PSD), self.plot_area)
                           ]
 
 
@@ -313,7 +313,7 @@ class EventViewPanel(pn.viewable.Viewer):
     def _apply_filters(self, event=None):
         notch_filter = [(w[0].value, w[1].value) for w in self.notch_widgets]
         self.controller.update_filter(self.lowcut_spin.value, self.highcut_spin.value, self.order_spin.value, notch_filter, bool(self.denoise.value))
-
+        self.ts_widget.update()
     # ---------------------------
     # Probe / View helpers
     # ---------------------------
@@ -462,6 +462,7 @@ class EventViewPanel(pn.viewable.Viewer):
                     dmap = hv.DynamicMap(get_curve, streams=[self.pipes]).opts(subcoordinate_y=True,
                                                                         subcoordinate_scale=1,
                                                                         min_width = 120,
+                                                                        min_height = 200,
                                                                         yaxis=None,   
                                                                         show_grid=True,
                                                                         show_legend=False,

@@ -139,17 +139,20 @@ class Controller:
             self.notch_freq = notch_freq
 
         self.denoise = denoise
+        if self.model is None: 
+            return
+            
+        self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq, self.denoise)
 
         def update_():
-            if self.model is None: 
-                return
+            
             try: 
-                self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq, self.denoise)
-
                 for value in self.events:
                     self.model.compute_event(self.events[value])
+
             except Exception as e: 
                 print(str(e))
+
             self.view.update_sources()
         
         self.executor.submit(update_)

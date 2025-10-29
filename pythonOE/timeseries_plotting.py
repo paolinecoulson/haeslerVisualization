@@ -62,20 +62,7 @@ class TimeseriesView(pn.viewable.Viewer):
 
                 offset = np.max(y_sub) * spacing_factor
 
-            # Event markers
-            for event_name, ts in self.controller.events.items():
-                print(ts)
-                vloc = ts * self.controller.model.fs
-                print(vloc)
-                elements.append(
-                    hv.VLine(vloc).opts(
-                        line_color='red', 
-                        line_width=2,  # Thicker for visibility
-                        line_dash='dashed',
-                    )
-                )
-
-
+                
             ov = hv.Overlay(elements).opts(
                 yaxis='left',
                 show_grid=True,
@@ -85,8 +72,8 @@ class TimeseriesView(pn.viewable.Viewer):
                 legend_offset=(10, 10),
                 tools=['xwheel_zoom', 'ywheel_zoom', 'xpan', 'reset'], 
                 active_tools=['ywheel_zoom'],
-                height=500,  # Fixed height for better control
-                xlabel="Time (samples)",
+                min_height=500,  # Fixed height for better control
+                xlabel="Time (s)",
                 ylabel="Amplitude",
                 # Font size adjustments
                 fontsize={
