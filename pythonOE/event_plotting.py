@@ -445,6 +445,7 @@ class EventViewPanel(pn.viewable.Viewer):
         self.plot_area.clear()
 
         def create_plots():
+            self.layout.busy_indicator.active = True
             self.pipes = Pipe(data=(np.asarray(x),np.asarray(y)))
 
             for i in range(nbr_col_display):
@@ -452,6 +453,7 @@ class EventViewPanel(pn.viewable.Viewer):
                 curves = [hv.VLine(0).opts(line_color='black', line_width=1, line_dash='dashed',  tools=[], active_tools=[])]
 
                 for j in range(nbr_row_display):
+                    
                     def get_curve(data, nbr_row_display=nbr_row_display, i=i, j=j):
                             x, y = data
                             curve =  hv.Curve((x, y[i*nbr_row_display + j, :]))
@@ -503,6 +505,7 @@ class EventViewPanel(pn.viewable.Viewer):
                 overlay.opts(tools=['xwheel_zoom','ywheel_zoom', 'xpan'], active_tools=['ywheel_zoom'])
              
                 self.hv_plots.append(overlay)
+                
 
             self.plot_area.extend(self.hv_plots)
             self.load_button.name = "Load probe view"
@@ -510,7 +513,7 @@ class EventViewPanel(pn.viewable.Viewer):
 
             if self.controller.model.data_path:
                 self.start_btn.disabled = False
-
+            self.layout.busy_indicator.active = False
         thread = threading.Thread(target=create_plots, daemon=True)
         thread.start()
 

@@ -47,22 +47,28 @@ class TimeseriesView(pn.viewable.Viewer):
                         )
                     )
                     continue
+
+
+                y_sub = y[:, row, col]
+
+                if self.PSD.value: 
+                    x, y_sub = self.controller.model.compute_psd_with_hanning(y_sub)
                     
-                y_sub = y[:, row, col] + offset
+                y_sub = y_sub + offset
 
-
-                elements.append(
-                    hv.Curve((x,  y_sub), label=f"(R{row}, C{col})")
-                    .opts(
+                curve = hv.Curve((x,  y_sub), label=f"(R{row}, C{col})").opts(
                         axiswise=False, 
                         framewise=True,
                         line_width=2,  # Thicker lines for visibility
                     )
-                )
+                if self.PSD.value: 
+                    curve = curve.redim.range(x=(0,200))
+
+                elements.append(curve)
 
                 offset = np.max(y_sub) * spacing_factor
 
-                
+
             ov = hv.Overlay(elements).opts(
                 yaxis='left',
                 show_grid=True,
@@ -94,9 +100,11 @@ class TimeseriesView(pn.viewable.Viewer):
             button_type="primary"
         )
         self.add_sub_button.on_click(self.add_sub_curve)
+        self.PSD = pn.widgets.Checkbox(name=f"PSD", value=False, align="center")
+        self.PSD.param.watch(self.update, "value")
 
         self.controls = pn.Column(
-            self.add_sub_button,
+            pn.Row(self.add_sub_button, self.PSD),
             sizing_mode="stretch_width"
         )
         self.add_sub_curve()
@@ -107,7 +115,8 @@ class TimeseriesView(pn.viewable.Viewer):
         )
 
         self.plot = dmap
-        
+
+
         self._panel = pn.Column(
             self.controls, 
             pn.pane.HoloViews(
@@ -218,10 +227,10 @@ class TimeseriesView(pn.viewable.Viewer):
 
         self.update()
 
-    def update(self):
-        valid, x_data, y_data = self.controller.get_full_data()
+    def update(self, value=None):
+        x_data, y_data = self.controller.get_full_data(psd=bool(self.PSD.value))
 
-        if not valid:
+        if x_data is None:
             return
         
         self.pipe.send((x_data, y_data))

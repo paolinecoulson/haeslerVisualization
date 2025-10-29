@@ -141,7 +141,7 @@ class Controller:
         self.denoise = denoise
         if self.model is None: 
             return
-            
+
         self.model.setup_filters(self.lc,self.hc, self.order, self.notch_freq, self.denoise)
 
         def update_():
@@ -180,18 +180,21 @@ class Controller:
 
         else:
             x, y = self.model.reset_xy(self.event_duration)
-
+        
+        print(y.shape)
         if psd: 
-            x,y = self.model.compute_psd_with_hanning(y)
+            x, y = self.model.compute_psd_with_hanning(y)
 
         return x, y
 
 
-    def get_full_data(self):
+    def get_full_data(self, psd):
         if self.model is None: 
-            return False, None, None
-        x, y = self.model.get_full_signal()
-        return True, x, y
+            return None, None
+
+        x, y = self.model.get_full_signal(psd)
+        
+        return x, y
 
 
 

@@ -115,10 +115,17 @@ class Model:
         # --- Wait until file has enough bytes ---
         if wait:
             expected_bytes = stop_sample * bytes_per_sample
+            start_time = time.time()
+            timeout = 100  # seconds
             while True:
                 file_size = os.path.getsize(self.file)
                 if file_size >= expected_bytes:
                     break
+                if time.time() - start_time > timeout:
+                    raise TimeoutError(
+                        f"Timeout: waited {timeout/60:.1f} minutes for file '{self.file}' "
+                        f"to reach {expected_bytes} bytes (currently {file_size} bytes)."
+                    )
                 time.sleep(0.05)
 
         # --- Try reading from buffer ---
@@ -158,7 +165,7 @@ class Model:
         return reshaped.copy()
 
 
-    def get_full_signal(self):
+    def get_full_signal(self, psd=False):
         """
         Return the full signal for a given electrode position (nrow, ncol).
         
@@ -175,16 +182,19 @@ class Model:
 
         # --- Extract one channel
         signal = data.copy().astype(np.float64)
-
-        if self.sos_all is not None:
+        if signal.shape[0] == 0: 
+            return np.array([]), signal
+        
+        if not psd and self.sos_all is not None:
             try:
                 signal = signal - np.mean(signal, axis=0)
                 signal = sosfiltfilt(self.sos_all, signal, axis=0)
             except Exception as e:
                 print(f"Filter full signal error: {e}")
 
-        if self.denoise: 
+        if not psd and self.denoise: 
             signal = self.apply_denoise(signal)
+
         # --- Build time axis (seconds)
         n_samples = signal.shape[0]
         x = (np.arange(start_sample, start_sample + n_samples) / self.fs)
@@ -205,6 +215,7 @@ class Model:
         self.denoise = denoise
 
     def compute_psd_with_hanning(self, signal, nperseg=256):
+
         window = windows.hann(nperseg)
         
         freqs, psd = welch(
