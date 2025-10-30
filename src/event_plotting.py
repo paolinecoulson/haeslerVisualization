@@ -546,4 +546,9 @@ def handle_sigint(sig, frame):
 
 signal.signal(signal.SIGINT, handle_sigint)
 
-ev.servable()
+
+if pn.state.served:
+    ev.servable()
+
+elif __name__ == "__main__":
+    ev.show(port=5007)

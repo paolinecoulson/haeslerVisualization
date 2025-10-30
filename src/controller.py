@@ -4,9 +4,6 @@ from pathlib import Path
 import threading
 import numpy as np
 from concurrent.futures import ThreadPoolExecutor
-import signal 
-
-
 
 class Controller: 
 
