@@ -5,7 +5,7 @@ Start with `panel serve event_panel_app.py`.
 """
 from holoviews.streams import Pipe
 import holoviews as hv
-import json
+import json, tempfile
 import base64
 import threading
 from functools import partial
@@ -23,9 +23,6 @@ import sys
 hv.extension("bokeh")
 pn.extension(defer_load=True, nthreads=100, sizing_mode="stretch_width")
 
-
-def dict_to_bytes(d: dict) -> bytes:
-    return json.dumps(d, indent=2).encode("utf-8")
 
 
 class EventViewPanel(pn.viewable.Viewer):
@@ -246,11 +243,15 @@ class EventViewPanel(pn.viewable.Viewer):
         return cfg
 
     def _get_config_bytes(self):
-        return dict_to_bytes(self.get_config_param())
+        data = json.dumps(self.get_config_param(), indent=2)
+        tmp = tempfile.NamedTemporaryFile(mode="w+", suffix=".json", delete=False)
+        tmp.write(data)
+        tmp.seek(0)
+        return tmp
 
     def _on_config_file_uploaded(self, event):
         """FileInput returns a base64-encoded bytes string in event.new"""
-        val = event.new
+        val = self.file_input.value
         if not val:
             return
         try:
