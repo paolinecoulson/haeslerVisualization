@@ -5,7 +5,7 @@ import panel as pn
 from bokeh.models import Spinner
 import time
 from holoviews.streams import Pipe
-pn.extension('bokeh')
+
 hv.extension('bokeh')
 
 class TimeseriesView(pn.viewable.Viewer):

@@ -21,7 +21,7 @@ import sys
 
 # ensure bokeh backend
 hv.extension("bokeh")
-pn.extension(defer_load=True, nthreads=100, sizing_mode="stretch_width")
+pn.extension(defer_load=True, nthreads=0, sizing_mode="stretch_width")
 
 
 
@@ -42,7 +42,6 @@ class EventViewPanel(pn.viewable.Viewer):
         # ---------------------------
         # Widgets
         # ---------------------------
-        # Spinners / numeric inputs
         self.spinner_duration = pn.widgets.IntInput(
             name="Event duration (ms)", value=100, step=10, start=0, end=1000, align="end"
         )
@@ -136,7 +135,7 @@ class EventViewPanel(pn.viewable.Viewer):
             pn.Column(
                 pn.pane.Markdown("**Bandpass filter parameters**"),
                 pn.Row(self.lowcut_spin, self.highcut_spin),
-                pn.Row(pn.Spacer(width=100),self.order_spin,pn.Spacer(width=100)),
+                pn.Row(pn.Spacer(width=100), self.order_spin, pn.Spacer(width=100)),
                 self.denoise,
                 pn.Row(self.add_notch_btn, self.clear_notch_btn),
                 
@@ -149,6 +148,24 @@ class EventViewPanel(pn.viewable.Viewer):
             sizing_mode="stretch_width",
             margin=(10, 10, 10, 10),  # (top, right, bottom, left)
         )
+        
+        self.event_panel = pn.Card(
+            pn.Column(
+                pn.pane.Markdown("Select event trigger:"),
+                pn.GridBox(*self.event_checkboxes, ncols=4),
+            ),
+            title="TTL event triggers",
+            collapsible=True,
+            collapsed=True,
+            sizing_mode="stretch_width",
+            margin=(10, 10, 10, 10),  # (top, right, bottom, left)
+        )
+        
+        add_event_panel = pn.Card(self.event_name_text, self.events_section, self.add_event_btn, 
+                                    collapsed=True,
+                                    title="Create new events",  
+                                    sizing_mode="stretch_width", 
+                                    margin=(10, 10, 10, 10))
 
         self.probe_panel = pn.Card(
             pn.Column(
@@ -163,17 +180,7 @@ class EventViewPanel(pn.viewable.Viewer):
             margin=(20, 0, 20, 0),  # (top, right, bottom, left)
         )
 
-        self.event_panel = pn.Card(
-            pn.Column(
-                pn.pane.Markdown("Select event trigger:"),
-                pn.GridBox(*self.event_checkboxes, ncols=4, sizing_mode="stretch_width"),
-            ),
-            title="TTL event triggers",
-            collapsible=True,
-            collapsed=True,
-            sizing_mode="stretch_width",
-            margin=(10, 10, 10, 10),  # (top, right, bottom, left)
-        )
+
 
         acquisition_folder = pn.Card(
             pn.Column(self.select_folder_btn, self.path_display,self.folder_display),
@@ -191,24 +198,19 @@ class EventViewPanel(pn.viewable.Viewer):
 
         )
 
-        add_event_panel = pn.Card(self.event_name_text, self.events_section, self.add_event_btn, 
-                                    collapsed=True,
-                                    title="Create new events",  
-                                    sizing_mode="stretch_width", margin=(10, 10, 10, 10))
-
         loading_controls = pn.Row(self.start_btn, self.stop_btn, self.spinner_nbr_events,sizing_mode="stretch_width")
+        filter_controls = pn.Row(self.filter_panel, self.event_panel, add_event_panel,sizing_mode="stretch_width")
 
         self.plot_area = pn.Row(pn.widgets.StaticText(name="", value="No probe view loaded."), sizing_mode="stretch_both",height_policy='max')
+
+        event_display_control = pn.Column(pn.Row(self.dropdown, self.spinner_duration, self.PSD), self.plot_area)
 
         self.layout = pn.template.FastListTemplate(
                     sidebar=[config_panel, self.probe_panel, acquisition_folder, self.ts_widget], # 
                     sidebar_width = 400,
                     title = "NeuroLayer real-time visualization")
 
-        self.layout.main[:]=[loading_controls,  
-                          pn.Row(self.filter_panel, self.event_panel, add_event_panel),
-                          pn.Column(pn.Row(self.dropdown, self.spinner_duration, self.PSD), self.plot_area)
-                          ]
+        self.layout.main[:]=[loading_controls, filter_controls,event_display_control]
 
 
     def __panel__(self):
@@ -546,9 +548,12 @@ def handle_sigint(sig, frame):
 
 signal.signal(signal.SIGINT, handle_sigint)
 
+def main():
+    ev.show(port=5007)
+
 
 if pn.state.served:
     ev.servable()
 
 elif __name__ == "__main__":
-    ev.show(port=5007)
+    main()
