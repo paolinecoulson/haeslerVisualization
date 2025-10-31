@@ -4,16 +4,28 @@ REM Configuration
 REM -----------------------------
 SET REPO_URL=https://github.com/paolinecoulson/haeslerVisualization.git
 SET APP_FOLDER=%USERPROFILE%\haeslerVisualization
-SET DLL_URL=https://github.com/....  #a modifier
+SET DLL_URL="https://github.com/paolinecoulson/NeuroLayerOEPlugin/releases/download/1.0.0/NIDAQ-windows_0.1.0-API10.zip"
 SET DLL_NAME=neurolayer.dll
+
+:: --------------------------------------------------
+:: Require admin privileges
+:: --------------------------------------------------
+net session >nul 2>&1
+if %errorLevel% neq 0 (
+    echo [INFO] Requesting administrator privileges...
+    powershell -Command "Start-Process '%~f0' -Verb RunAs"
+    exit /b
+)
+
 
 REM -----------------------------
 REM 0. Install uv if not already installed
 REM -----------------------------
 where uv >nul 2>nul
 IF %ERRORLEVEL% NEQ 0 (
-    echo uv not found. Installing uv...
-    powershell -Command "irm https://astral.sh/uv/install.ps1 | iex"
+    echo [INFO] uv not found. Installing uv...
+    powershell -Command "Set-ExecutionPolicy Bypass -Scope Process -Force; irm https://astral.sh/uv/install.ps1 | iex"
+    SET PATH="%USERPROFILE%\.local\bin;%PATH%"
 ) ELSE (
     echo uv is already installed.
 )
@@ -25,7 +37,12 @@ IF NOT EXIST "%APP_FOLDER%" (
     echo Cloning web app repo...
     git clone "%REPO_URL%" "%APP_FOLDER%"
 ) ELSE (
-    echo Repo already exists, skipping clone.
+    echo [INFO] Repo already exists, skipping clone.
+    cd /d "%APP_FOLDER%"
+    git fetch origin %BRANCH%
+    git stash
+    git checkout %BRANCH%
+    git pull
 )
 
 REM -----------------------------
@@ -38,6 +55,7 @@ REM 3. Sync uv environment
 REM -----------------------------
 echo Syncing uv environment...
 uv sync
+uv tool install . 
 
 REM -----------------------------
 REM 5. Download DLL from GitHub
@@ -64,6 +82,20 @@ REM 7. Copy DLL to plugin folder
 REM -----------------------------
 echo Copying DLL to Open-Ephys Plugins folder...
 COPY /Y "%TEMP%\%DLL_NAME%" "%OE_PLUGIN_FOLDER%"
+
+REM -----------------------------
+REM 8. Create desktop shortcut for neurolayer_gui
+REM -----------------------------
+SET SHORTCUT_NAME=NeuroLayer GUI
+SET DESKTOP_FOLDER=%USERPROFILE%\Desktop
+SET SHORTCUT_PATH=%DESKTOP_FOLDER%\%SHORTCUT_NAME%.lnk
+
+REM Path to the installed CLI script (uv tool installs it in %USERPROFILE%\.local\bin)
+SET TARGET_PATH=%USERPROFILE%\.local\bin\neurolayer_gui.exe
+
+powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%SHORTCUT_PATH%'); $Shortcut.TargetPath = '%TARGET_PATH%'; $Shortcut.WorkingDirectory = '%APP_FOLDER%'; $Shortcut.WindowStyle = 1; $Shortcut.IconLocation = '%TARGET_PATH%'; $Shortcut.Save()"
+
+echo [INFO] Shortcut created on desktop.
 
 echo Done!
 pause
