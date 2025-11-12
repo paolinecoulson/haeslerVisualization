@@ -5,17 +5,14 @@ The project is composed of two repositories:
 - **NeuroLayerPlugin** – an Open Ephys plugin that provides a DLL library to be added to the Open Ephys plugin folder.  
 - **HaeslerVisualization** – a web-based visualization panel.
 
----
 
-## Step 1: Install Open Ephys
+**Step 1: Install Open Ephys**
 
 If Open Ephys is not already installed, install it first.
 
 The web app uses the **Event Broadcaster** plugin, which must be installed from the **Open Ephys Plugin Store** (available inside the Open Ephys application).
 
----
-
-## Step 2: Run the Installer
+**Step 2: Run the Installer**
 
 Double-click the `install.bat` file.  
 This script will automatically:
@@ -44,8 +41,6 @@ This script will automatically:
 After adding and configuring the NeuroLayer plugin, you don’t need to interact with Open Ephys directly.  
 All further actions can be performed through the web app.
 
----
-
 ## Visualization Setup
 
 - Choose the **number of columns and rows** for your probe layout.  
@@ -54,22 +49,21 @@ All further actions can be performed through the web app.
   - This process can take some time.  
   - You can adjust other parameters simultaneously, such as the folder where data will be saved.
 
----
 
-## Event Configuration
+**Event Configuration**
 
 Customize the **TTL event line** from which events are received.  
 This should match the number defined in Open Ephys or in the configuration `.json` file used to set up the NeuroLayer plugin.
 
-## Event Filtering
+**Event Filtering**
 
 Customize the type of filtering to use it can be done offline as well after acquisition.
 
-## Event creation 
+**Event creation** 
 
 Create a new event that combine the ones selected by averaging.
 
----
+
 
 ## ⚠️ Warning
 
