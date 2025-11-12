@@ -5,7 +5,7 @@ REM -----------------------------
 SET REPO_URL=https://github.com/paolinecoulson/haeslerVisualization.git
 SET APP_FOLDER=%USERPROFILE%\haeslerVisualization
 SET DLL_URL="https://github.com/paolinecoulson/NeuroLayerOEPlugin/releases/download/1.0.0/NIDAQ-windows_0.1.0-API10.zip"
-SET DLL_NAME=neurolayer.dll
+SET DLL_NAME=NeuroLayerOEPlugin.dll
 
 :: --------------------------------------------------
 :: Require admin privileges
@@ -54,7 +54,7 @@ REM -----------------------------
 REM 3. Sync uv environment
 REM -----------------------------
 echo Syncing uv environment...
-uv sync
+uv sync --frozen
 uv tool install . 
 
 REM -----------------------------
