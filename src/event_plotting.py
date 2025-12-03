@@ -48,7 +48,7 @@ class EventViewPanel(pn.viewable.Viewer):
         self.spinner_duration.param.watch(self._on_duration_change, "value")
 
         self.spinner_nbr_events = pn.widgets.IntInput(
-            name="Number of events to record", value=4, step=1, start=0, end=10,  align='end'
+            name="Number of events to record", value=4, step=1, start=0, end=1000,  align='end'
         )
         self.spinner_nbr_events.param.watch(self._on_nbr_events_change, "value")
 
