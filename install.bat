@@ -39,9 +39,9 @@ IF NOT EXIST "%APP_FOLDER%" (
 ) ELSE (
     echo [INFO] Repo already exists, skipping clone.
     cd /d "%APP_FOLDER%"
-    git fetch origin %BRANCH%
+    git fetch origin main
     git stash
-    git checkout %BRANCH%
+    git checkout main
     git pull
 )
 
